@@ -203,4 +203,55 @@ path "litellm/data/config" {
 }
 EOF
 
+# ── Vault Transform Secret Engine (PII masking for user-mcp) ──────────────────
+# Only the two builtin templates (socialsecuritynumber, creditcardnumber) are
+# used for Vault Transform masking — custom regex templates are unreliable in
+# this version. phone, email, and ip_address are masked in the application
+# layer (vault_transform.py) without a Vault round-trip.
+vault secrets list | grep -q "^transform/" || vault secrets enable transform
+
+# SSN — uses Vault builtin template
+vault write transform/transformation/mask-ssn \
+  type=masking \
+  template="builtin/socialsecuritynumber" \
+  masking_character='*' \
+  allowed_roles="user-mcp-transform"
+
+# Credit card — uses Vault builtin template (strips non-digits before encoding)
+vault write transform/transformation/mask-credit-card \
+  type=masking \
+  template="builtin/creditcardnumber" \
+  masking_character='*' \
+  allowed_roles="user-mcp-transform"
+
+# Role that bundles only the two Vault-backed transformations
+vault write transform/role/user-mcp-transform \
+  transformations=mask-ssn,mask-credit-card
+
+# Policy to allow user-mcp to encode through Transform
+vault policy write user-mcp-transform - <<'EOF'
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
+# Extend the JWT read/write roles so user-mcp can also call Transform
+vault policy write user-mcp-db-read - <<'EOF'
+path "database/creds/user-mcp-read-role" {
+  capabilities = ["read"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
+vault policy write user-mcp-db-write - <<'EOF'
+path "database/creds/user-mcp-write-role" {
+  capabilities = ["read"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
 echo "vault-setup: done."

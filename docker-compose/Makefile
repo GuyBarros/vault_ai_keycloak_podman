@@ -1,5 +1,5 @@
 all: clear build
-	docker compose up --force-recreate
+	docker compose up -d --force-recreate
 
 clear:
 	docker compose down -v
