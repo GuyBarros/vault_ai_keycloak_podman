@@ -1,0 +1,388 @@
+/* ============================================================
+   IBM Carbon Design System — Core Tokens
+   Based on @carbon/themes (white, g10, g90, g100) and
+   IBM Design Language. Use these in place of raw colors/sizes.
+   ============================================================ */
+
+/* IBM Plex via Google Fonts (substituted for official IBM Plex
+   font files — see README; the metrics are identical). */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:wght@300;400;600;700&display=swap');
+
+:root {
+  /* -----------------------------------------------------------
+     CORE PALETTE — IBM Color V2
+     Full 10-step scales. Theme tokens below reference these.
+     ----------------------------------------------------------- */
+
+  /* Blue (IBM Brand) */
+  --cds-blue-10: #edf5ff;
+  --cds-blue-20: #d0e2ff;
+  --cds-blue-30: #a6c8ff;
+  --cds-blue-40: #78a9ff;
+  --cds-blue-50: #4589ff;
+  --cds-blue-60: #0f62fe;   /* IBM Blue — signature */
+  --cds-blue-70: #0043ce;
+  --cds-blue-80: #002d9c;
+  --cds-blue-90: #001d6c;
+  --cds-blue-100: #001141;
+
+  /* Gray (Neutral) */
+  --cds-gray-10: #f4f4f4;
+  --cds-gray-20: #e0e0e0;
+  --cds-gray-30: #c6c6c6;
+  --cds-gray-40: #a8a8a8;
+  --cds-gray-50: #8d8d8d;
+  --cds-gray-60: #6f6f6f;
+  --cds-gray-70: #525252;
+  --cds-gray-80: #393939;
+  --cds-gray-90: #262626;
+  --cds-gray-100: #161616;
+
+  /* Red */
+  --cds-red-10: #fff1f1;
+  --cds-red-20: #ffd7d9;
+  --cds-red-30: #ffb3b8;
+  --cds-red-40: #ff8389;
+  --cds-red-50: #fa4d56;
+  --cds-red-60: #da1e28;
+  --cds-red-70: #a2191f;
+  --cds-red-80: #750e13;
+  --cds-red-90: #520408;
+  --cds-red-100: #2d0709;
+
+  /* Green */
+  --cds-green-10: #defbe6;
+  --cds-green-20: #a7f0ba;
+  --cds-green-30: #6fdc8c;
+  --cds-green-40: #42be65;
+  --cds-green-50: #24a148;
+  --cds-green-60: #198038;
+  --cds-green-70: #0e6027;
+  --cds-green-80: #044317;
+  --cds-green-90: #022d0d;
+  --cds-green-100: #071908;
+
+  /* Yellow */
+  --cds-yellow-10: #fcf4d6;
+  --cds-yellow-20: #fddc69;
+  --cds-yellow-30: #f1c21b;
+  --cds-yellow-40: #d2a106;
+  --cds-yellow-50: #b28600;
+  --cds-yellow-60: #8e6a00;
+  --cds-yellow-70: #684e00;
+  --cds-yellow-80: #483700;
+  --cds-yellow-90: #302400;
+  --cds-yellow-100: #1c1500;
+
+  /* Teal, Purple, Magenta, Cyan (common secondary palettes) */
+  --cds-teal-50: #009d9a;
+  --cds-teal-60: #007d79;
+  --cds-teal-70: #005d5d;
+  --cds-purple-50: #8a3ffc;
+  --cds-purple-60: #6929c4;
+  --cds-purple-70: #491d8b;
+  --cds-magenta-50: #ee5396;
+  --cds-magenta-60: #d02670;
+  --cds-cyan-50: #1192e8;
+  --cds-cyan-60: #0072c3;
+
+  /* -----------------------------------------------------------
+     TYPOGRAPHY — IBM Plex
+     ----------------------------------------------------------- */
+  --cds-font-sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+  --cds-font-serif: 'IBM Plex Serif', Georgia, 'Times New Roman', serif;
+  --cds-font-mono: 'IBM Plex Mono', Menlo, 'DejaVu Sans Mono', 'Courier New', monospace;
+
+  /* Productive type styles — tight line-height, for UI */
+  --cds-label-01-size: 0.75rem;     --cds-label-01-lh: 1rem;        --cds-label-01-weight: 400;
+  --cds-label-02-size: 0.875rem;    --cds-label-02-lh: 1.125rem;    --cds-label-02-weight: 400;
+  --cds-helper-01-size: 0.75rem;    --cds-helper-01-lh: 1rem;       --cds-helper-01-weight: 400;
+  --cds-caption-01-size: 0.75rem;   --cds-caption-01-lh: 1rem;      --cds-caption-01-weight: 400;
+  --cds-legal-01-size: 0.75rem;     --cds-legal-01-lh: 1rem;        --cds-legal-01-weight: 400;
+
+  --cds-body-01-size: 0.875rem;     --cds-body-01-lh: 1.25rem;      --cds-body-01-weight: 400;
+  --cds-body-02-size: 1rem;         --cds-body-02-lh: 1.5rem;       --cds-body-02-weight: 400;
+  --cds-code-01-size: 0.75rem;      --cds-code-01-lh: 1rem;         --cds-code-01-weight: 400;
+  --cds-code-02-size: 0.875rem;     --cds-code-02-lh: 1.25rem;      --cds-code-02-weight: 400;
+
+  --cds-heading-01-size: 0.875rem;  --cds-heading-01-lh: 1.25rem;   --cds-heading-01-weight: 600;
+  --cds-heading-02-size: 1rem;      --cds-heading-02-lh: 1.5rem;    --cds-heading-02-weight: 600;
+  --cds-heading-03-size: 1.25rem;   --cds-heading-03-lh: 1.75rem;   --cds-heading-03-weight: 400;
+  --cds-heading-04-size: 1.75rem;   --cds-heading-04-lh: 2.25rem;   --cds-heading-04-weight: 400;
+  --cds-heading-05-size: 2rem;      --cds-heading-05-lh: 2.5rem;    --cds-heading-05-weight: 400;
+  --cds-heading-06-size: 2.625rem;  --cds-heading-06-lh: 3.125rem;  --cds-heading-06-weight: 300;
+  --cds-heading-07-size: 3.375rem;  --cds-heading-07-lh: 4rem;      --cds-heading-07-weight: 300;
+
+  /* Expressive (fluid display) */
+  --cds-display-01-size: 2.625rem;  --cds-display-01-lh: 3.125rem;
+  --cds-display-02-size: 2.625rem;  --cds-display-02-lh: 3.125rem;
+  --cds-display-03-size: 2.625rem;  --cds-display-03-lh: 3.125rem;
+  --cds-display-04-size: 2.625rem;  --cds-display-04-lh: 3.125rem;
+
+  /* -----------------------------------------------------------
+     SPACING — Carbon spacing scale 01..13
+     ----------------------------------------------------------- */
+  --cds-spacing-01: 0.125rem;  /* 2  */
+  --cds-spacing-02: 0.25rem;   /* 4  */
+  --cds-spacing-03: 0.5rem;    /* 8  */
+  --cds-spacing-04: 0.75rem;   /* 12 */
+  --cds-spacing-05: 1rem;      /* 16 */
+  --cds-spacing-06: 1.5rem;    /* 24 */
+  --cds-spacing-07: 2rem;      /* 32 */
+  --cds-spacing-08: 2.5rem;    /* 40 */
+  --cds-spacing-09: 3rem;      /* 48 */
+  --cds-spacing-10: 4rem;      /* 64 */
+  --cds-spacing-11: 5rem;      /* 80 */
+  --cds-spacing-12: 6rem;      /* 96 */
+  --cds-spacing-13: 10rem;     /* 160 */
+
+  /* -----------------------------------------------------------
+     LAYOUT — fluid size tokens
+     ----------------------------------------------------------- */
+  --cds-size-xs:   1.5rem;
+  --cds-size-sm:   2rem;
+  --cds-size-md:   2.5rem;
+  --cds-size-lg:   3rem;
+  --cds-size-xl:   4rem;
+  --cds-size-2xl:  5rem;
+
+  /* -----------------------------------------------------------
+     MOTION — Carbon easing + duration
+     ----------------------------------------------------------- */
+  --cds-motion-standard:      cubic-bezier(0.2, 0, 0.38, 0.9);
+  --cds-motion-entrance-prod: cubic-bezier(0, 0, 0.38, 0.9);
+  --cds-motion-exit-prod:     cubic-bezier(0.2, 0, 1, 0.9);
+  --cds-motion-entrance-expr: cubic-bezier(0, 0, 0.3, 1);
+  --cds-motion-exit-expr:     cubic-bezier(0.4, 0.14, 1, 1);
+
+  --cds-duration-fast-01: 70ms;
+  --cds-duration-fast-02: 110ms;
+  --cds-duration-mod-01:  150ms;
+  --cds-duration-mod-02:  240ms;
+  --cds-duration-slow-01: 400ms;
+  --cds-duration-slow-02: 700ms;
+
+  /* -----------------------------------------------------------
+     SHAPE — Carbon keeps corners mostly sharp. Radii are small.
+     ----------------------------------------------------------- */
+  --cds-radius-none:  0;
+  --cds-radius-xs:    2px;
+  --cds-radius-sm:    4px;
+  --cds-radius-md:    6px;
+  --cds-radius-lg:    8px;
+  --cds-radius-pill:  999px;
+
+  /* -----------------------------------------------------------
+     BORDER
+     ----------------------------------------------------------- */
+  --cds-border-thin: 1px;
+  --cds-border-thick: 2px;
+  --cds-border-strong: 3px;
+
+  /* -----------------------------------------------------------
+     FOCUS — signature thick outline, no offset
+     ----------------------------------------------------------- */
+  --cds-focus: #0f62fe;
+  --cds-focus-inset: #ffffff;
+  --cds-focus-inverse: #ffffff;
+}
+
+/* ============================================================
+   THEMES
+   Carbon ships four reference themes; White + G10 are light,
+   G90 + G100 are dark. Semantic tokens below. Default is White.
+   ============================================================ */
+
+:root,
+[data-carbon-theme="white"] {
+  --cds-background:            #ffffff;
+  --cds-background-hover:      rgba(141,141,141,0.12);
+  --cds-background-active:     rgba(141,141,141,0.30);
+  --cds-background-selected:   rgba(141,141,141,0.20);
+  --cds-background-inverse:    #393939;
+  --cds-background-brand:      var(--cds-blue-60);
+
+  --cds-layer-01: #f4f4f4;
+  --cds-layer-02: #ffffff;
+  --cds-layer-03: #f4f4f4;
+  --cds-layer-hover-01: #e8e8e8;
+  --cds-layer-active-01: #c6c6c6;
+  --cds-layer-selected-01: #e0e0e0;
+  --cds-layer-accent-01: #e0e0e0;
+
+  --cds-field-01: #f4f4f4;
+  --cds-field-02: #ffffff;
+  --cds-field-hover-01: #e8e8e8;
+
+  --cds-text-primary:   #161616;
+  --cds-text-secondary: #525252;
+  --cds-text-placeholder: #a8a8a8;
+  --cds-text-helper:    #6f6f6f;
+  --cds-text-on-color:  #ffffff;
+  --cds-text-disabled:  rgba(22,22,22,0.25);
+  --cds-text-error:     #da1e28;
+  --cds-text-inverse:   #ffffff;
+  --cds-link-primary:       #0f62fe;
+  --cds-link-primary-hover: #0043ce;
+  --cds-link-secondary:     #0043ce;
+  --cds-link-visited:       #8a3ffc;
+
+  --cds-icon-primary:   #161616;
+  --cds-icon-secondary: #525252;
+  --cds-icon-on-color:  #ffffff;
+  --cds-icon-disabled:  rgba(22,22,22,0.25);
+  --cds-icon-inverse:   #ffffff;
+
+  --cds-border-subtle-00: #e0e0e0;
+  --cds-border-subtle-01: #c6c6c6;
+  --cds-border-strong-01: #8d8d8d;
+  --cds-border-inverse:   #161616;
+  --cds-border-interactive: #0f62fe;
+
+  --cds-support-error:   #da1e28;
+  --cds-support-success: #24a148;
+  --cds-support-warning: #f1c21b;
+  --cds-support-info:    #0043ce;
+
+  --cds-button-primary:           #0f62fe;
+  --cds-button-primary-hover:     #0050e6;
+  --cds-button-primary-active:    #002d9c;
+  --cds-button-secondary:         #393939;
+  --cds-button-secondary-hover:   #474747;
+  --cds-button-secondary-active:  #6f6f6f;
+  --cds-button-danger-primary:    #da1e28;
+  --cds-button-danger-hover:      #b81921;
+  --cds-button-tertiary:          #0f62fe;
+  --cds-button-tertiary-hover:    #0050e6;
+
+  --cds-overlay: rgba(22,22,22,0.5);
+  --cds-shadow:  rgba(0,0,0,0.3);
+  --cds-toggle-off: #8d8d8d;
+}
+
+[data-carbon-theme="g10"] {
+  --cds-background: #f4f4f4;
+  --cds-layer-01: #ffffff;
+  --cds-layer-02: #f4f4f4;
+  --cds-layer-03: #ffffff;
+  --cds-field-01: #ffffff;
+  --cds-field-02: #f4f4f4;
+}
+
+[data-carbon-theme="g90"] {
+  --cds-background: #262626;
+  --cds-background-hover: rgba(141,141,141,0.16);
+  --cds-background-active: rgba(141,141,141,0.40);
+  --cds-background-inverse: #f4f4f4;
+
+  --cds-layer-01: #393939;
+  --cds-layer-02: #525252;
+  --cds-layer-03: #6f6f6f;
+  --cds-layer-hover-01: #474747;
+  --cds-layer-active-01: #6f6f6f;
+  --cds-layer-selected-01: #525252;
+  --cds-layer-accent-01: #525252;
+
+  --cds-field-01: #393939;
+  --cds-field-02: #525252;
+  --cds-field-hover-01: #474747;
+
+  --cds-text-primary:   #f4f4f4;
+  --cds-text-secondary: #c6c6c6;
+  --cds-text-placeholder: #6f6f6f;
+  --cds-text-helper:    #a8a8a8;
+  --cds-text-on-color:  #ffffff;
+  --cds-text-disabled:  rgba(244,244,244,0.25);
+  --cds-text-inverse:   #161616;
+  --cds-link-primary:   #78a9ff;
+
+  --cds-icon-primary:   #f4f4f4;
+  --cds-icon-secondary: #c6c6c6;
+  --cds-icon-inverse:   #161616;
+
+  --cds-border-subtle-00: #525252;
+  --cds-border-subtle-01: #6f6f6f;
+  --cds-border-strong-01: #a8a8a8;
+  --cds-border-interactive: #4589ff;
+
+  --cds-button-primary:           #0f62fe;
+  --cds-button-primary-hover:     #0353e9;
+  --cds-button-secondary:         #6f6f6f;
+  --cds-button-secondary-hover:   #5e5e5e;
+  --cds-button-tertiary:          #ffffff;
+
+  --cds-overlay: rgba(0,0,0,0.65);
+}
+
+[data-carbon-theme="g100"] {
+  --cds-background: #161616;
+  --cds-layer-01: #262626;
+  --cds-layer-02: #393939;
+  --cds-layer-03: #525252;
+  --cds-field-01: #262626;
+  --cds-field-02: #393939;
+
+  --cds-text-primary:   #f4f4f4;
+  --cds-text-secondary: #c6c6c6;
+  --cds-text-placeholder: #6f6f6f;
+  --cds-text-helper:    #a8a8a8;
+
+  --cds-border-subtle-00: #393939;
+  --cds-border-subtle-01: #525252;
+
+  --cds-link-primary:   #78a9ff;
+  --cds-button-primary: #0f62fe;
+  --cds-button-secondary: #6f6f6f;
+  --cds-button-tertiary: #ffffff;
+
+  --cds-overlay: rgba(0,0,0,0.7);
+}
+
+/* ============================================================
+   SEMANTIC TEXT STYLES
+   Use these classes (or compose manually) on headings and body.
+   Carbon type is intentionally compact and geometric.
+   ============================================================ */
+
+html, body {
+  font-family: var(--cds-font-sans);
+  font-feature-settings: "ss01" on, "liga" on;
+  color: var(--cds-text-primary);
+  background: var(--cds-background);
+  -webkit-font-smoothing: antialiased;
+}
+
+.cds--type-label-01   { font-size: var(--cds-label-01-size);   line-height: var(--cds-label-01-lh);   font-weight: var(--cds-label-01-weight); letter-spacing: 0.32px; }
+.cds--type-label-02   { font-size: var(--cds-label-02-size);   line-height: var(--cds-label-02-lh);   font-weight: var(--cds-label-02-weight); letter-spacing: 0.16px; }
+.cds--type-helper-01  { font-size: var(--cds-helper-01-size);  line-height: var(--cds-helper-01-lh);  letter-spacing: 0.32px; color: var(--cds-text-helper); }
+.cds--type-body-01    { font-size: var(--cds-body-01-size);    line-height: var(--cds-body-01-lh);    letter-spacing: 0.16px; }
+.cds--type-body-02    { font-size: var(--cds-body-02-size);    line-height: var(--cds-body-02-lh);    letter-spacing: 0; }
+.cds--type-code-01    { font-family: var(--cds-font-mono); font-size: var(--cds-code-01-size); line-height: var(--cds-code-01-lh); letter-spacing: 0.32px; }
+.cds--type-code-02    { font-family: var(--cds-font-mono); font-size: var(--cds-code-02-size); line-height: var(--cds-code-02-lh); letter-spacing: 0.32px; }
+
+.cds--type-heading-01 { font-size: var(--cds-heading-01-size); line-height: var(--cds-heading-01-lh); font-weight: 600; letter-spacing: 0.16px; }
+.cds--type-heading-02 { font-size: var(--cds-heading-02-size); line-height: var(--cds-heading-02-lh); font-weight: 600; letter-spacing: 0; }
+.cds--type-heading-03 { font-size: var(--cds-heading-03-size); line-height: var(--cds-heading-03-lh); font-weight: 400; letter-spacing: 0; }
+.cds--type-heading-04 { font-size: var(--cds-heading-04-size); line-height: var(--cds-heading-04-lh); font-weight: 400; letter-spacing: 0; }
+.cds--type-heading-05 { font-size: var(--cds-heading-05-size); line-height: var(--cds-heading-05-lh); font-weight: 400; letter-spacing: 0; }
+.cds--type-heading-06 { font-size: var(--cds-heading-06-size); line-height: var(--cds-heading-06-lh); font-weight: 300; letter-spacing: 0; }
+.cds--type-heading-07 { font-size: var(--cds-heading-07-size); line-height: var(--cds-heading-07-lh); font-weight: 300; letter-spacing: 0; }
+
+/* Expressive fluid headings (clamp-based for demo) */
+.cds--type-fluid-heading-03 { font-weight: 400; font-size: clamp(1.25rem, 1.1vw + 1rem, 2rem); line-height: 1.25; }
+.cds--type-fluid-heading-04 { font-weight: 400; font-size: clamp(1.75rem, 2vw + 1rem, 2.625rem); line-height: 1.22; }
+.cds--type-fluid-heading-05 { font-weight: 400; font-size: clamp(2rem, 3vw + 1rem, 3.375rem); line-height: 1.2; }
+.cds--type-fluid-heading-06 { font-weight: 600; font-size: clamp(2rem, 4vw + 1rem, 4.25rem); line-height: 1.2; }
+
+/* Default element mapping (semantic aliases) */
+h1 { font-size: var(--cds-heading-06-size); line-height: var(--cds-heading-06-lh); font-weight: 300; }
+h2 { font-size: var(--cds-heading-05-size); line-height: var(--cds-heading-05-lh); font-weight: 400; }
+h3 { font-size: var(--cds-heading-04-size); line-height: var(--cds-heading-04-lh); font-weight: 400; }
+h4 { font-size: var(--cds-heading-03-size); line-height: var(--cds-heading-03-lh); font-weight: 400; }
+h5 { font-size: var(--cds-heading-02-size); line-height: var(--cds-heading-02-lh); font-weight: 600; }
+h6 { font-size: var(--cds-heading-01-size); line-height: var(--cds-heading-01-lh); font-weight: 600; }
+p  { font-size: var(--cds-body-02-size);    line-height: var(--cds-body-02-lh); }
+code,kbd,pre { font-family: var(--cds-font-mono); }
+
+a { color: var(--cds-link-primary); text-decoration: none; border-bottom: 1px solid transparent; }
+a:hover { color: var(--cds-link-primary-hover); border-bottom-color: currentColor; }

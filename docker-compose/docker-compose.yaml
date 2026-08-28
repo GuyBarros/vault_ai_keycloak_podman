@@ -1,0 +1,300 @@
+services:
+
+  litellm:
+    image: docker.litellm.ai/berriai/litellm:main-latest
+    container_name: litellm
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./templates/litellm_config.yaml:/app/config.yaml:ro
+      - ./templates/litellm-entrypoint.sh:/entrypoint.sh:ro
+      - vault-secrets:/vault/secrets:ro
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+    environment:
+      GENERIC_CLIENT_ID: "web"
+      GENERIC_CLIENT_SECRET: "REDACTED"
+      GENERIC_AUTHORIZATION_ENDPOINT: "http://localhost:8081/realms/demo/protocol/openid-connect/auth"
+      GENERIC_TOKEN_ENDPOINT: "http://keycloak:8080/realms/demo/protocol/openid-connect/token"
+      GENERIC_USERINFO_ENDPOINT: "http://keycloak:8080/realms/demo/protocol/openid-connect/userinfo"
+      GENERIC_REDIRECT_URI: "http://localhost:4000/sso/callback"
+      GENERIC_SCOPE: "openid profile email"
+      GENERIC_CLIENT_STATE: "random"
+      GENERIC_CLIENT_USE_PKCE: "true"
+      GENERIC_USER_ID_ATTRIBUTE: "sub"
+      GENERIC_USERNAME_ATTRIBUTE: "preferred_username"
+      GENERIC_EMAIL_ATTRIBUTE: "email"
+      PROXY_ADMIN_ID: "admin@demo.com"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-setup:
+        condition: service_completed_successfully
+      vault:
+        condition: service_healthy
+      vault-agent:
+        condition: service_started
+    networks:
+      - app-network
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: users
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d users"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app-network
+
+  vault:
+    image: hashicorp/vault-enterprise:2.0.4-ent
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_LICENSE_PATH: /vault/vault.hclic
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - ./templates/vault.hclic:/vault/vault.hclic
+    networks:
+      app-network:
+        aliases:
+          - vault
+
+  db-setup:
+    image: postgres:16
+    container_name: db-setup
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        until pg_isready -h postgres -p 5432 -U postgres -d users >/dev/null 2>&1; do
+          echo "waiting for postgres to accept TCP connections..."
+          sleep 3
+        done
+        psql "postgresql://postgres:$$PGPASSWORD@postgres:5432/users?sslmode=disable" \
+          -v ON_ERROR_STOP=1 -f /sql/users-init.sql
+    volumes:
+      - ./templates/users-init.sql:/sql/users-init.sql:ro
+    networks:
+      - app-network
+
+  vault-setup:
+    image: hashicorp/vault:2.0.4
+    container_name: vault-setup
+    restart: "no"
+    user: root
+    depends_on:
+      vault:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: root
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      WATSONX_API_KEY: ${WATSONX_API_KEY:-}
+      WATSONX_PROJECT_ID: ${WATSONX_PROJECT_ID:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-ibm123}
+    entrypoint: /bin/sh
+    command: /vault-setup/vault-setup.sh
+    volumes:
+      - ./templates/vault-setup.sh:/vault-setup/vault-setup.sh:ro
+      - ./templates/opa_policies/:/vault-setup/opa_policies:ro
+      - vault-agent-creds:/vault-agent-creds
+    networks:
+      - app-network
+
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7
+    container_name: keycloak
+    ports:
+      - "8081:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Pin the public (browser-facing) URL as the canonical issuer so tokens
+      # always carry iss=http://localhost:8081/realms/demo regardless of which
+      # network path the request came in on.
+      KC_HOSTNAME: http://localhost:8081
+      # Allow back-channel calls (Vault, token-exchange → keycloak:8080) to
+      # reach Keycloak using the internal Docker hostname even though the
+      # declared hostname is localhost:8081.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    volumes:
+      - ./templates/demo-realm.json:/opt/keycloak/data/import/demo-realm.json:ro
+    command: start-dev --import-realm --features=token-exchange-delegation,parameterized-scopes
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q 'issuer' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - app-network
+
+
+  user-mcp:
+    build:
+      context: ../user-mcp
+      dockerfile: Dockerfile
+    image: user-mcp:local
+    container_name: user-mcp
+    ports:
+      - "8090:8090"
+    env_file:
+      - ./templates/user-mcp.env
+    depends_on:
+      vault-setup:
+        condition: service_completed_successfully
+      db-setup:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  token-exchange:
+    build:
+      context: ../token-exchange
+      dockerfile: Dockerfile
+    image: token-exchange:local
+    container_name: token-exchange
+    ports:
+      - "9090:9090"
+    env_file:
+      - ./templates/token-exchange.env
+    environment:
+      IDENTITY_BROKER_VAULT_ADDR: http://vault:8200
+      IDENTITY_BROKER_KEYCLOAK_URL: http://keycloak:8080
+    depends_on:
+      vault:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  web:
+    build:
+      context: ../web-app
+      dockerfile: Dockerfile
+    image: agentguard-web-app:local
+    container_name: web
+    ports:
+      - "8080:8080"
+    environment:     
+      NEXT_PUBLIC_CUSTOM_AUDIENCE: "cIAMbelle"
+      AI_AGENT_API_URL: "http://ai-agent:8000"
+      COOKIE_SECURE: "false"
+    env_file:
+      - ./templates/web-app.env
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: "200M"
+          cpus: "0.256"
+        reservations:
+          memory: "100M"
+          cpus: "0.256"
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Vault Agent — runs as a sidecar, fetches the OIDC actor-token from Vault
+  # and writes it to the shared in-memory volume so ai-agent can read it.
+  # ---------------------------------------------------------------------------
+  vault-agent:
+    image: hashicorp/vault:2.0.4
+    container_name: vault-agent
+    restart: unless-stopped
+    user: root
+    depends_on:
+      vault-setup:
+        condition: service_completed_successfully
+    environment:
+      VAULT_ADDR: http://vault:8200
+    entrypoint:
+      - vault
+      - agent
+      - -config=/vault/config/vault-agent.hcl
+    volumes:
+      - ./templates/vault-agent.hcl:/vault/config/vault-agent.hcl:ro
+      # AppRole credentials written by vault-setup.
+      - vault-agent-creds:/vault/creds:ro
+      # Shared in-memory volume — secrets are never written to disk.
+      - vault-secrets:/vault/secrets
+    networks:
+      - app-network
+
+  ai-agent:
+    build:
+      context: ../ai-agent
+      dockerfile: Dockerfile
+    image: agentguard-ai-agent:local
+    container_name: ai-agent
+    ports:
+      - "8000:8000"
+    depends_on:
+      vault-agent:
+        condition: service_started
+      litellm:
+        condition: service_healthy
+      token-exchange:
+        condition: service_started
+    environment:
+      TOKEN_EXCHANGE_URL: "http://token-exchange:9090/v1/identity/obo-token"
+      ACTOR_TOKEN_PATH: "/vault/secrets/actor-token"
+      USER_MCP_URL: "http://user-mcp:8090/mcp"
+    volumes:
+      - ./templates/ai-agent.env:/app/.env:ro
+      - vault-secrets:/vault/secrets:ro
+    networks:
+      - app-network
+
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  vault-agent-creds:
+  vault-secrets:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=10m,mode=0750"

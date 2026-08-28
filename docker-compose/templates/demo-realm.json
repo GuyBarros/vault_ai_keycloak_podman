@@ -1,0 +1,478 @@
+{
+  "realm": "demo",
+  "enabled": true,
+  "attributes": {
+    "token-exchange": "true"
+  },
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 600,
+  "ssoSessionMaxLifespan": 36000,
+
+  "clients": [
+    {
+      "clientId": "web",
+      "name": "web",
+      "description": "AgentGuard web application (OIDC authorization-code flow)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "REDACTED",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8080/api/auth/callback",
+        "http://localhost:4000/sso/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8080",
+        "http://localhost:4000"
+      ],
+      "rootUrl": "http://localhost:8080",
+      "baseUrl": "/",
+      "consentRequired": true,
+      "fullScopeAllowed": false,
+      "optionalClientScopes": [
+        "Agent.Invoke",
+        "delegation"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8080/",
+        "token.exchange.grant.enabled": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-token-exchange",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "token-exchange",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "introspection.token.claim": "true",
+            "add.to.lightweight.access.token": "true"
+          }
+        },
+        {
+          "name": "aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "user-mcp",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "introspection.token.claim": "true",
+            "add.to.lightweight.access.token": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "token-exchange",
+      "name": "token-exchange",
+      "description": "Service client that performs OAuth 2.0 token exchange (RFC 8693) against Keycloak",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "token-exchange-secret",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [],
+      "attributes": {
+        "token.exchange.grant.enabled": "true",
+        "standard.token.exchange.enabled": "true"
+      },
+      "optionalClientScopes": [
+        "users.read",
+        "users.write",
+        "delegation"
+      ],
+      "protocolMappers": [
+        {
+          "name": "aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "user-mcp",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "introspection.token.claim": "true",
+            "add.to.lightweight.access.token": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "user-mcp",
+      "name": "user-mcp",
+      "description": "Resource server — the audience for RFC 8693 exchanged tokens",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "user-mcp-secret",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "token.exchange.grant.enabled": "true"
+      }
+    }
+  ],
+
+  "clientScopes": [
+    {
+      "name": "delegation",
+      "description": "OpenID Connect built-in scope: delegation",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Allow AI agent to act on your behalf",
+        "is.parameterized.scope": "true",
+        "parameterized.scope.type": "delegation",
+        "parameterized.scope.repeatable": "false",
+        "always.display.consent": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "may_act sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-parameterized-scope-user-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "false",
+            "user.attribute": "id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "may_act.sub",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "may_act preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-parameterized-scope-user-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "false",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "may_act.preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "may_act iss",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "claim.value": "http://vault:8200/v1/identity/oidc",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "may_act.iss",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "openid",
+      "description": "OpenID Connect built-in scope: openid",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "profile",
+      "description": "OpenID Connect built-in scope: profile",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "${profileScopeConsentText}"
+      }
+    },
+    {
+      "name": "email",
+      "description": "OpenID Connect built-in scope: email",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "${emailScopeConsentText}"
+      }
+    },
+    {
+      "name": "roles",
+      "description": "OpenID Connect built-in scope: realm and client roles",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "${rolesScopeConsentText}"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "claim.name": "groups",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent.Invoke",
+      "description": "Permission to invoke AI agents",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Invoke AI agents on your behalf"
+      },
+      "protocolMappers": [
+        {
+          "name": "agent.invoke-aud-token-exchange",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "token-exchange",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "lightweight.claim": "true"
+          }
+        },
+        {
+          "name": "preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "lightweight.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "users.read",
+      "description": "Permission to read user records",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "users.read-aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "user-mcp",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "lightweight.claim": "true"
+          }
+        },
+        {
+          "name": "users.read-preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "false",
+            "lightweight.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "users.read-groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "claim.name": "groups",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "users.write",
+      "description": "Permission to write user records",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "users.write-aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "user-mcp",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "lightweight.claim": "true"
+          }
+        },
+        {
+          "name": "users.write-preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "false",
+            "lightweight.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "users.write-groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "claim.name": "groups",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+
+  "groups": [
+    {
+      "name": "readers",
+      "path": "/readers"
+    },
+    {
+      "name": "writers",
+      "path": "/writers"
+    }
+  ],
+
+  "users": [
+    {
+      "username": "ai-agent",
+      "id": "ai-agent",
+      "enabled": true,
+      "email": "ai-agent@demo.com",
+      "firstName": "AI",
+      "lastName": "Agent",
+      "credentials": [],
+      "realmRoles": [],
+      "clientRoles": {
+        "realm-management": ["impersonation"]
+      }
+    },
+    {
+      "username": "admin",
+      "id": "admin@demo.com",
+      "enabled": true,
+      "email": "admin@demo.com",
+      "firstName": "Test",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "groups": ["readers", "writers"]
+    },
+    {
+      "username": "user",   
+      "id": "user@demo.com",   
+      "enabled": true,
+      "email": "user@demo.com",
+      "firstName": "Demo",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user",
+          "temporary": false
+        }
+      ],
+      "groups": ["readers"]
+    }
+  ]
+}

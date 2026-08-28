@@ -1,0 +1,61 @@
+[project]
+name = "user-mcp"
+version = "0.1.0"
+description = "FastMCP service exposing user-management tools over streamable HTTP"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "pyjwt[crypto]>=2.11.0",
+    "cryptography>=43.0.0",
+    "asyncpg>=0.30.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.0",
+    "uvicorn[standard]>=0.30.0",
+    "starlette>=0.40.0",
+    "httpx>=0.28.0",
+    "email-validator>=2.2.0",
+    "opentelemetry-exporter-otlp>=1.43.0",
+    "opentelemetry-distro>=0.64b0",
+    "opentelemetry-instrumentation-asyncio==0.64b0",
+    "opentelemetry-instrumentation-dbapi==0.64b0",
+    "opentelemetry-instrumentation-exceptions==0.64b0",
+    "opentelemetry-instrumentation-logging==0.64b0",
+    "opentelemetry-instrumentation-sqlite3==0.64b0",
+    "opentelemetry-instrumentation-threading==0.64b0",
+    "opentelemetry-instrumentation-urllib==0.64b0",
+    "opentelemetry-instrumentation-wsgi==0.64b0",
+    "opentelemetry-instrumentation-asyncpg==0.64b0",
+    "opentelemetry-instrumentation-click==0.64b0",
+    "opentelemetry-instrumentation-grpc==0.64b0",
+    "opentelemetry-instrumentation-httpx==0.64b0",
+    "opentelemetry-instrumentation-requests==0.64b0",
+    "opentelemetry-instrumentation-starlette==0.64b0",
+    "opentelemetry-instrumentation-tortoiseorm==0.64b0",
+    "opentelemetry-instrumentation-urllib3==0.64b0",
+    "traceloop-sdk>=0.62.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: tests that need a live Postgres instance",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["auth", "storage", "tools"]
+
+[tool.uv]
+package = false

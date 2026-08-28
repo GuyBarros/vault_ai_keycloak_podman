@@ -1,0 +1,43 @@
+@use '@carbon/styles/scss/themes' as themes;
+@use '@carbon/styles/scss/theme';
+@use '@carbon/styles';
+@use 'styles/header';
+@use 'styles/login';
+@use 'styles/hero';
+@use 'styles/chat';
+@use 'styles/inspector';
+@use 'styles/composer';
+@use 'styles/flow-strip';
+
+:root {
+  @include theme.theme(themes.$white);
+}
+
+[data-carbon-theme='white'] {
+  @include theme.theme(themes.$white);
+}
+
+[data-carbon-theme='g100'] {
+  @include theme.theme(themes.$g100);
+}
+
+* { box-sizing: border-box; }
+
+html {
+  font-size: 17px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--cds-background);
+  color: var(--cds-text-primary);
+}
+
+body {
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  font-family: var(--cds-font-sans);
+}
+
+button { font-family: inherit; }

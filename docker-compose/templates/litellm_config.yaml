@@ -1,0 +1,28 @@
+model_list:
+  # - model_name: gpt-5-mini
+  #   litellm_params:
+  #     model: openai/gpt-5-mini
+  #     api_key: "os.environ/OPENAI_API_KEY"
+  - model_name: default
+    litellm_params:
+      model: watsonx/openai/gpt-oss-120b
+      api_key: "os.environ/WATSONX_API_KEY"
+      api_base: https://us-south.ml.cloud.ibm.com
+      project_id: "os.environ/WATSONX_PROJECT_ID"
+      timeout: 120
+
+mcp_servers:
+  user_mcp:
+    url: "http://user-mcp:8090/mcp"
+    transport: "http"
+    # auth_type: "true_passthrough"
+    auth_type: none
+
+router_settings: 
+  default_model: watsonx-openai
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: "postgresql://postgres:postgres@postgres:5432/litellm"
+  store_model_in_db: true
+

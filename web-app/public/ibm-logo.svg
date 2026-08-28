@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 48" aria-label="IBM">
+  <title>IBM</title>
+  <g fill="currentColor">
+    <rect y="0" width="120" height="4"></rect>
+    <rect y="8" width="120" height="4"></rect>
+    <rect y="16" width="120" height="4"></rect>
+    <rect y="24" width="120" height="4"></rect>
+    <rect y="32" width="120" height="4"></rect>
+    <rect y="40" width="120" height="4"></rect>
+  </g>
+  <g fill="transparent">
+    <rect x="4" y="16" width="8" height="4"></rect>
+    <rect x="20" y="16" width="8" height="4"></rect>
+    <rect x="4" y="32" width="8" height="4"></rect>
+    <rect x="20" y="32" width="8" height="4"></rect>
+    <rect x="40" y="16" width="24" height="4"></rect>
+    <rect x="40" y="32" width="24" height="4"></rect>
+    <rect x="76" y="16" width="8" height="4"></rect>
+    <rect x="92" y="16" width="4" height="4"></rect>
+    <rect x="104" y="16" width="8" height="4"></rect>
+    <rect x="76" y="32" width="40" height="4"></rect>
+  </g>
+</svg>

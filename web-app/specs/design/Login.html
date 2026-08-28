@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" data-carbon-theme="g100">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AI Runtime Security — Sign in</title>
+<link rel="stylesheet" href="carbon-tokens.css" />
+<style>
+  /* Strict Carbon g100. Sharp corners, flat color, no gradients, no shadows. */
+  html, body { height: 100%; margin: 0; background: var(--cds-background); }
+  body {
+    font-family: var(--cds-font-sans);
+    color: var(--cds-text-primary);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* UI Shell header — Carbon standard */
+  .cds--header {
+    height: 48px;
+    background: #161616;
+    border-bottom: 1px solid #393939;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--cds-spacing-05);
+    color: var(--cds-text-primary);
+  }
+  .cds--header__name {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: var(--cds-body-01-size);
+    letter-spacing: 0.16px;
+  }
+  .cds--header__name strong { font-weight: 600; }
+  .cds--header__name .sub { color: var(--cds-text-secondary); }
+
+  main.page {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    padding: var(--cds-spacing-10) var(--cds-spacing-07);
+  }
+  .stack {
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* IBM 8-bar mark — inverted for dark theme */
+  .mark {
+    width: 48px;
+    height: auto;
+    margin-bottom: var(--cds-spacing-07);
+  }
+
+  /* Expressive productive pairing, as Carbon prescribes for hero marketing */
+  .eyebrow {
+    font-family: var(--cds-font-mono);
+    font-size: var(--cds-label-01-size);
+    line-height: var(--cds-label-01-lh);
+    letter-spacing: 0.32px;
+    text-transform: uppercase;
+    color: var(--cds-text-secondary);
+    margin-bottom: var(--cds-spacing-05);
+  }
+  h1.title {
+    margin: 0 0 var(--cds-spacing-06) 0;
+    font-weight: 300;
+    font-size: var(--cds-heading-07-size);
+    line-height: var(--cds-heading-07-lh);
+    letter-spacing: 0;
+    color: var(--cds-text-primary);
+  }
+  p.sub {
+    margin: 0 0 var(--cds-spacing-09) 0;
+    font-size: var(--cds-body-02-size);
+    line-height: var(--cds-body-02-lh);
+    color: var(--cds-text-secondary);
+    max-width: 56ch;
+  }
+
+  /* Carbon Button — primary, fluid, sharp corners, icon slot on right */
+  .cds--btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cds-spacing-06);
+    height: 64px; /* XL, for fluid hero CTA */
+    padding: 0 var(--cds-spacing-09) 0 var(--cds-spacing-05);
+    background: var(--cds-button-primary);
+    color: var(--cds-text-on-color);
+    border: 0;
+    border-radius: 0;
+    font-family: var(--cds-font-sans);
+    font-size: var(--cds-body-01-size);
+    font-weight: 400;
+    letter-spacing: 0.16px;
+    cursor: pointer;
+    transition: background-color var(--cds-duration-mod-01) var(--cds-motion-standard);
+    min-width: 320px;
+  }
+  .cds--btn:hover { background: var(--cds-button-primary-hover); }
+  .cds--btn:active { background: var(--cds-button-primary-active); }
+  .cds--btn:focus-visible {
+    outline: 2px solid var(--cds-focus);
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 1px var(--cds-focus-inset);
+  }
+  .cds--btn:disabled { background: #8d8d8d; color: rgba(255,255,255,0.25); cursor: not-allowed; }
+  .cds--btn__icon {
+    width: 16px; height: 16px;
+    flex: none;
+    color: currentColor;
+  }
+  .cds--btn.is-loading { cursor: progress; }
+  .cds--btn.is-loading .cds--btn__label { opacity: 0.7; }
+
+  /* Legal / caption */
+  .caption {
+    margin-top: var(--cds-spacing-06);
+    font-family: var(--cds-font-mono);
+    font-size: var(--cds-legal-01-size);
+    line-height: var(--cds-legal-01-lh);
+    letter-spacing: 0.32px;
+    color: var(--cds-text-helper);
+  }
+
+  /* Inline loading spinner (Carbon style — thin ring) */
+  .cds--loading {
+    width: 16px; height: 16px;
+    border: 1px solid rgba(255,255,255,0.35);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: cds-spin 700ms linear infinite;
+  }
+  @keyframes cds-spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <header class="cds--header" role="banner">
+    <span class="cds--header__name">
+      <strong>IBM</strong>
+      <span class="sub">AI Runtime Security</span>
+    </span>
+  </header>
+
+  <main class="page">
+    <div class="stack">
+      <svg class="mark" viewBox="0 0 120 48" xmlns="http://www.w3.org/2000/svg" aria-label="IBM">
+        <g fill="#f4f4f4">
+          <rect y="0" width="120" height="4"></rect>
+          <rect y="8" width="120" height="4"></rect>
+          <rect y="16" width="120" height="4"></rect>
+          <rect y="24" width="120" height="4"></rect>
+          <rect y="32" width="120" height="4"></rect>
+          <rect y="40" width="120" height="4"></rect>
+        </g>
+        <g fill="#161616">
+          <rect x="4" y="16" width="8" height="4"></rect>
+          <rect x="20" y="16" width="8" height="4"></rect>
+          <rect x="4" y="32" width="8" height="4"></rect>
+          <rect x="20" y="32" width="8" height="4"></rect>
+          <rect x="40" y="16" width="24" height="4"></rect>
+          <rect x="40" y="32" width="24" height="4"></rect>
+          <rect x="76" y="16" width="8" height="4"></rect>
+          <rect x="92" y="16" width="4" height="4"></rect>
+          <rect x="104" y="16" width="8" height="4"></rect>
+          <rect x="76" y="32" width="40" height="4"></rect>
+        </g>
+      </svg>
+
+      <div class="eyebrow">Sign in</div>
+      <h1 class="title">AI Runtime Security</h1>
+      <p class="sub">
+        Your AI. Your data. Sign in to start a governed conversation with your AI agent.
+      </p>
+
+      <button class="cds--btn" id="loginBtn" type="button">
+        <span class="cds--btn__label">Login with Keycloak</span>
+        <span class="cds--btn__icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
+            <path d="M3 8h10m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
+
+      <div class="caption">Secured with IBM Verify, IBM watsonx Governance, HashiCorp Consul &amp; Vault.</div>
+    </div>
+  </main>
+
+  <script>
+    const btn = document.getElementById('loginBtn');
+    const label = btn.querySelector('.cds--btn__label');
+    const icon = btn.querySelector('.cds--btn__icon');
+    btn.addEventListener('click', () => {
+      btn.classList.add('is-loading');
+      btn.setAttribute('aria-busy', 'true');
+      label.textContent = 'Signing in…';
+      icon.innerHTML = '<span class="cds--loading" role="status" aria-label="Loading"></span>';
+      setTimeout(() => { window.location.href = 'Landing.html'; }, 700);
+    });
+  </script>
+</body>
+</html>
