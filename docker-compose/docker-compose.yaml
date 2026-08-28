@@ -13,8 +13,8 @@ services:
       - /bin/sh
       - /entrypoint.sh
     environment:
-      GENERIC_CLIENT_ID: "web"
-      GENERIC_CLIENT_SECRET: "REDACTED"
+      GENERIC_CLIENT_ID: ${GENERIC_CLIENT_ID}
+      GENERIC_CLIENT_SECRET: ${GENERIC_CLIENT_SECRET}
       GENERIC_AUTHORIZATION_ENDPOINT: "http://localhost:8081/realms/demo/protocol/openid-connect/auth"
       GENERIC_TOKEN_ENDPOINT: "http://keycloak:8080/realms/demo/protocol/openid-connect/token"
       GENERIC_USERINFO_ENDPOINT: "http://keycloak:8080/realms/demo/protocol/openid-connect/userinfo"
