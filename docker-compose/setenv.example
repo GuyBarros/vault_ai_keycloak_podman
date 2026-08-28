@@ -4,3 +4,4 @@ export WATSONX_API_URL=https://us-south.ml.cloud.ibm.com
 export LITELLM_MASTER_KEY=ibm123
 export GENERIC_CLIENT_ID=
 export GENERIC_CLIENT_SECRET=
+export KEYCLOAK_CLIENT_SECRET=

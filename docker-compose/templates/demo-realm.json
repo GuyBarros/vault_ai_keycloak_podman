@@ -21,7 +21,7 @@
       "description": "AgentGuard web application (OIDC authorization-code flow)",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "REDACTED",
+      "secret": "change-me-in-setenv",
       "protocol": "openid-connect",
       "publicClient": false,
       "standardFlowEnabled": true,
