@@ -132,7 +132,6 @@ services:
     volumes:
       - ./templates/vault-setup.sh:/vault-setup/vault-setup.sh:ro
       - ./templates/opa_policies/:/vault-setup/opa_policies:ro
-      - vault-agent-creds:/vault-agent-creds
     networks:
       - app-network
 
@@ -295,7 +294,7 @@ services:
     image: token-exchange:local
     container_name: token-exchange
     ports:
-      - "9090:9090"
+      - "9091:9090"
     env_file:
       - ./templates/token-exchange.env
     environment:
@@ -318,7 +317,7 @@ services:
     ports:
       - "8080:8080"
     environment:     
-      NEXT_PUBLIC_CUSTOM_AUDIENCE: "cIAMbelle"
+      NEXT_PUBLIC_CUSTOM_AUDIENCE: "IAM"
       AI_AGENT_API_URL: "http://ai-agent:8000"
       COOKIE_SECURE: "false"
     env_file:
@@ -346,19 +345,28 @@ services:
     container_name: vault-agent
     restart: unless-stopped
     user: root
+    # Share the PID namespace with spire-agent so SO_PEERCRED on the Workload
+    # API socket returns a PID that spire-agent can resolve in /proc.
+    pid: "service:spire-agent"
     depends_on:
       vault-setup:
         condition: service_completed_successfully
+      spire-setup:
+        condition: service_completed_successfully
+      spire-agent:
+        condition: service_started
     environment:
       VAULT_ADDR: http://vault:8200
     entrypoint:
-      - vault
-      - agent
-      - -config=/vault/config/vault-agent.hcl
+      - /bin/sh
+      - /vault/config/vault-agent-start.sh
     volumes:
       - ./templates/vault-agent.hcl:/vault/config/vault-agent.hcl:ro
-      # AppRole credentials written by vault-setup.
-      - vault-agent-creds:/vault/creds:ro
+      - ./templates/vault-agent-start.sh:/vault/config/vault-agent-start.sh:ro
+      # SPIRE Workload API socket for SPIFFE JWT-SVID attestation.
+      - spire-agent-socket:/tmp/spire-agent:ro
+      # Tmpfs for the JWT-SVID token file — never written to disk.
+      - spire-jwt:/tmp/spire-jwt
       # Shared in-memory volume — secrets are never written to disk.
       - vault-secrets:/vault/secrets
     networks:
@@ -392,16 +400,105 @@ services:
       - app-network
 
 
+  # ---------------------------------------------------------------------------
+  # cAdvisor — exposes per-container CPU / memory / network metrics.
+  # ---------------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/containers:/var/lib/containers:ro
+    ports:
+      - "127.0.0.1:8086:8080"
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Postgres exporter — exposes database metrics for Prometheus.
+  # ---------------------------------------------------------------------------
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:5432/users?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — scrapes Vault, LiteLLM, cAdvisor, and Postgres exporter.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./templates/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      cadvisor:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Grafana — dashboards for the AI IAM stack.
+  # Open http://localhost:3000  (admin / admin)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./templates/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./templates/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
 
 volumes:
-  vault-agent-creds:
   spire-data:
   spire-server-socket:
   spire-join-token:
   spire-agent-socket:
+  spire-jwt:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,mode=0700"
+  prometheus-data:
+  grafana-data:
   vault-secrets:
     driver: local
     driver_opts:

@@ -58,4 +58,15 @@ $SPIRE_CLI entry create \
   -jwtSVIDTTL 300 \
   -x509SVIDTTL 3600
 
+echo "spire-setup: registering ai-agent (vault-agent) workload entry..."
+
+# Register the ai-agent workload bound to unix UID 0 (vault-agent runs as root).
+$SPIRE_CLI entry create \
+  -spiffeID "spiffe://example.org/ai-agent" \
+  -parentID "spiffe://example.org/agent/user-mcp" \
+  -selector "unix:uid:0" \
+  -socketPath "$SOCKET" \
+  -jwtSVIDTTL 300 \
+  -x509SVIDTTL 3600
+
 echo "spire-setup: done."

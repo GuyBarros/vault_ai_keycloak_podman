@@ -217,45 +217,91 @@ path "opa-policies/data/bundle" {
 }
 EOF
 
-# AppRole auth for the ai-agent (docker-compose — no K8s SA injector)
-# Vault Agent natively supports the "approle" auto_auth method.
-vault auth list | grep -q "^approle/" || vault auth enable approle
+# SPIFFE JWT auth for the ai-agent (vault-agent authenticates via SPIRE SVID).
+# The jwt-spiffe mount is already configured above for user-mcp; we reuse it
+# and add a dedicated role bound to the ai-agent SPIFFE ID.
 
-vault write auth/approle/role/ai-agent \
-  token_policies="default,agent-role-identity-policy,litellm-secrets" \
-  token_period=1800 \
-  token_type=service \
-  secret_id_ttl=0 \
-  token_num_uses=0
+vault policy write ai-agent-spiffe-policy - <<'EOF'
+path "identity/oidc/token/agent-role" {
+  capabilities = ["read"]
+}
+path "litellm/data/config" {
+  capabilities = ["read"]
+}
+EOF
+
+vault write auth/jwt-spiffe/role/ai-agent-spiffe - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["TESTING"],
+  "bound_subject": "spiffe://example.org/ai-agent",
+  "token_policies": ["default", "ai-agent-spiffe-policy"],
+  "token_period": 1800,
+  "token_type": "service"
+}
+EOF
 
 # Pre-create an Identity entity for the ai-agent so that tokens minted via
-# AppRole login have an entity ID.  Vault OIDC tokens (identity/oidc/token/*)
+# jwt-spiffe login carry an entity ID.  Vault OIDC tokens (identity/oidc/token/*)
 # require the calling token to be entity-bound; without this the token field
 # in the response is empty.
 vault write identity/entity \
   name=ai-agent \
-  policies="default,agent-role-identity-policy,litellm-secrets"
-# Read back the ID by name — vault read returns key=value lines, -field extracts cleanly.
+  policies="default,ai-agent-spiffe-policy"
+
 ENTITY_ID=$(vault read -field=id identity/entity/name/ai-agent)
+echo "vault-setup: ai-agent entity id = ${ENTITY_ID}"
 
-# Resolve the AppRole accessor using vault's own -field flag.
-APPROLE_ACCESSOR=$(vault auth list -detailed -format=table \
-  | awk '/^approle\// {print $3}')
+# Resolve the jwt-spiffe mount accessor and create an entity alias so the
+# SPIFFE login maps to the ai-agent identity entity.
+JWT_SPIFFE_ACCESSOR=$(vault auth list -detailed -format=table \
+  | awk '/^jwt-spiffe\// {print $3}')
 
-# Create (or update) the entity alias that maps the AppRole mount to the entity.
-ROLE_ID=$(vault read -field=role_id auth/approle/role/ai-agent/role-id)
 vault write identity/entity-alias \
-  name="${ROLE_ID}" \
+  name="spiffe://example.org/ai-agent" \
   canonical_id="${ENTITY_ID}" \
-  mount_accessor="${APPROLE_ACCESSOR}"
+  mount_accessor="${JWT_SPIFFE_ACCESSOR}"
 
-# Write role-id and secret-id to the shared volume so vault-agent can read them.
-# Write to temp files first, then move atomically so vault-agent never sees an
-# empty/partial file if the vault command fails mid-redirect.
-vault read  -field=role_id   auth/approle/role/ai-agent/role-id      > /vault-agent-creds/role-id.tmp
-vault write -f -field=secret_id auth/approle/role/ai-agent/secret-id > /vault-agent-creds/secret-id.tmp
-mv /vault-agent-creds/role-id.tmp   /vault-agent-creds/role-id
-mv /vault-agent-creds/secret-id.tmp /vault-agent-creds/secret-id
+# ── Patch Keycloak ai-agent user id to match the Vault entity UUID ────────────
+# Vault OIDC tokens always use the entity UUID as sub. Keycloak's delegation
+# token-exchange validates actor_token.sub against the actor user's id.
+# We update the Keycloak user id to the Vault entity UUID so they match.
+# curl is required for the PUT call — install it transiently via apk.
+apk add --no-cache curl >/dev/null 2>&1
+
+echo "vault-setup: obtaining Keycloak admin token..."
+KC_TOKEN=$(wget -qO- \
+  --post-data="client_id=admin-cli&username=admin&password=admin&grant_type=password" \
+  http://keycloak:8080/realms/master/protocol/openid-connect/token \
+  | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+
+echo "vault-setup: looking up ai-agent user in Keycloak..."
+KC_USER_ID=$(wget -qO- \
+  --header="Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/users?username=ai-agent&exact=true" \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+echo "vault-setup: keycloak ai-agent user id = ${KC_USER_ID}"
+
+# Fetch the full user object then replace the id field and PUT it back.
+KC_USER_JSON=$(wget -qO- \
+  --header="Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/users/${KC_USER_ID}")
+
+UPDATED_JSON=$(echo "${KC_USER_JSON}" | sed "s/\"id\":\"${KC_USER_ID}\"/\"id\":\"${ENTITY_ID}\"/")
+
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X PUT \
+  -H "Authorization: Bearer ${KC_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "${UPDATED_JSON}" \
+  "http://keycloak:8080/admin/realms/demo/users/${KC_USER_ID}")
+
+if [ "${HTTP_STATUS}" = "204" ]; then
+  echo "vault-setup: Keycloak ai-agent user id updated to ${ENTITY_ID}"
+else
+  echo "vault-setup: WARNING — failed to update Keycloak ai-agent user id (HTTP ${HTTP_STATUS})" >&2
+fi
 
 # KV v2 secrets for LiteLLM
 vault secrets list | grep -q "^litellm/" || \
