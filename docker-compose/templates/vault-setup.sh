@@ -50,7 +50,77 @@ vault write database/roles/user-mcp-write-role \
   default_ttl=1h \
   max_ttl=24h
 
-# JWT auth backend for user-mcp (Keycloak as the OIDC provider) ──
+# ── JWT auth backend for user-mcp SPIFFE workload identity ───────────────────
+# SPIRE's JWKS endpoint is used so Vault can verify JWT-SVIDs issued by SPIRE.
+# The bound_subject enforces exactly the user-mcp SPIFFE ID.
+vault auth list | grep -q "^jwt-spiffe/" || \
+  vault auth enable -path=jwt-spiffe jwt
+
+# Wait for the JWKS proxy (which fetches from SPIRE and serves clean JWKS).
+echo "vault-setup: waiting for JWKS proxy..."
+until wget -qO- http://jwks-proxy:19876 >/dev/null 2>&1; do
+  sleep 2
+done
+echo "vault-setup: JWKS proxy is up."
+
+# Configure the JWT auth mount to fetch JWKS from the persistent proxy.
+# The proxy strips SPIRE-specific fields that cause Vault's parser to fail.
+# No bound_issuer — SPIRE JWT-SVIDs do not include an iss claim by default.
+# We enforce identity through bound_subject (the SPIFFE ID) in each role.
+vault write auth/jwt-spiffe/config \
+  jwks_url="http://jwks-proxy:19876" \
+  jwt_supported_algs="RS256,ES256,ES384,RS512,PS256,PS384,PS512"
+
+echo "vault-setup: jwt-spiffe config written (JWKS from proxy)."
+
+# Policy: spiffe workload gets DB read creds + transform encode
+vault policy write user-mcp-spiffe-read - <<'EOF'
+path "database/creds/user-mcp-read-role" {
+  capabilities = ["read"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
+vault policy write user-mcp-spiffe-write - <<'EOF'
+path "database/creds/user-mcp-write-role" {
+  capabilities = ["read"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
+# JWT roles bound to the user-mcp SPIFFE ID.
+# sub claim in a JWT-SVID is the SPIFFE ID URI.
+vault write auth/jwt-spiffe/role/user-mcp-spiffe-read - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["TESTING"],
+  "bound_subject": "spiffe://example.org/user-mcp",
+  "token_policies": ["user-mcp-spiffe-read"],
+  "token_ttl": 300,
+  "token_max_ttl": 900,
+  "token_type": "service"
+}
+EOF
+
+vault write auth/jwt-spiffe/role/user-mcp-spiffe-write - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["TESTING"],
+  "bound_subject": "spiffe://example.org/user-mcp",
+  "token_policies": ["user-mcp-spiffe-write"],
+  "token_ttl": 300,
+  "token_max_ttl": 900,
+  "token_type": "service"
+}
+EOF
+
+# ── JWT auth backend for user-mcp (Keycloak as the OIDC provider) ────────────
 # Keycloak OIDC discovery for the demo realm.
 vault auth list | grep -q "^jwt-user-mcp/" || \
   vault auth enable -path=jwt-user-mcp jwt

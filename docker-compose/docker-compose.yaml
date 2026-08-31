@@ -118,6 +118,8 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+      jwks-proxy:
+        condition: service_started
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: root
@@ -164,16 +166,114 @@ services:
       - app-network
 
 
+  # ---------------------------------------------------------------------------
+  # JWKS Proxy — serves a standard-format JWKS from the SPIRE bundle endpoint.
+  # Vault's jwt auth backend fetches this URL each time it needs to verify a
+  # token; the proxy strips SPIRE-specific fields that break Vault's parser.
+  # ---------------------------------------------------------------------------
+  jwks-proxy:
+    image: user-mcp:local
+    container_name: jwks-proxy
+    restart: unless-stopped
+    entrypoint: ["python3", "/jwks-proxy/jwks-proxy.py"]
+    volumes:
+      - ./templates/jwks-proxy.py:/jwks-proxy/jwks-proxy.py:ro
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    networks:
+      app-network:
+        aliases:
+          - jwks-proxy
+
+  # ---------------------------------------------------------------------------
+  # SPIRE Server — issues SVIDs for workloads registered in this trust domain.
+  # ---------------------------------------------------------------------------
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.11.1
+    container_name: spire-server
+    hostname: spire-server
+    command:
+      - -config
+      - /etc/spire/server/server.conf
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./templates/spire/server.conf:/etc/spire/server/server.conf:ro
+      - spire-data:/opt/spire/data
+      - spire-server-socket:/tmp/spire-server
+      - spire-join-token:/tmp/spire-join-token
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-server", "healthcheck", "-socketPath", "/tmp/spire-server/private/api.sock"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # SPIRE Agent — attests workloads and serves the Workload API socket.
+  # Shares the socket volume with user-mcp.
+  # ---------------------------------------------------------------------------
+  spire-agent:
+    # Use the same Alpine-based vault image so we have /bin/sh to read the
+    # join-token file.  The spire-agent binary is downloaded at startup.
+    image: hashicorp/vault:2.0.4
+    container_name: spire-agent
+    hostname: spire-agent
+    user: root
+    entrypoint: /bin/sh
+    command: /spire-agent/spire-agent-start.sh
+    volumes:
+      - ./templates/spire/agent.conf:/etc/spire/agent/agent.conf:ro
+      - ./templates/spire/spire-agent-start.sh:/spire-agent/spire-agent-start.sh:ro
+      - spire-join-token:/tmp/spire-join-token:ro
+      - spire-agent-socket:/tmp/spire-agent
+    depends_on:
+      spire-server:
+        condition: service_healthy
+      spire-setup:
+        condition: service_completed_successfully
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # SPIRE bootstrap — registers the user-mcp workload entry with the server.
+  # Uses the hashicorp/vault image (alpine-based, has wget + sh) to run the
+  # spire-server CLI via the admin socket on the shared volume.
+  # ---------------------------------------------------------------------------
+  spire-setup:
+    image: hashicorp/vault:2.0.4
+    container_name: spire-setup
+    restart: "no"
+    entrypoint: /bin/sh
+    command: /spire-setup/spire-setup.sh
+    volumes:
+      - ./templates/spire/spire-setup.sh:/spire-setup/spire-setup.sh:ro
+      - spire-server-socket:/tmp/spire-server
+      - spire-join-token:/tmp/spire-join-token
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    networks:
+      - app-network
+
   user-mcp:
     build:
       context: ../user-mcp
       dockerfile: Dockerfile
     image: user-mcp:local
     container_name: user-mcp
+    # Share the PID namespace with spire-agent so SO_PEERCRED on the Workload
+    # API socket returns a PID that spire-agent can resolve in /proc.
+    pid: "service:spire-agent"
     ports:
       - "8090:8090"
     env_file:
       - ./templates/user-mcp.env
+    volumes:
+      - spire-agent-socket:/tmp/spire-agent:ro
     depends_on:
       vault-setup:
         condition: service_completed_successfully
@@ -181,6 +281,10 @@ services:
         condition: service_completed_successfully
       keycloak:
         condition: service_healthy
+      spire-setup:
+        condition: service_completed_successfully
+      spire-agent:
+        condition: service_started
     networks:
       - app-network
 
@@ -294,6 +398,10 @@ networks:
 
 volumes:
   vault-agent-creds:
+  spire-data:
+  spire-server-socket:
+  spire-join-token:
+  spire-agent-socket:
   vault-secrets:
     driver: local
     driver_opts:
