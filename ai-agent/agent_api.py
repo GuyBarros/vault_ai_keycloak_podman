@@ -294,7 +294,7 @@ def create_app(
                 access_token_payload
             )["preferred_username"]
             user_groups = extract_user_groups(access_token_payload)
-            is_admin = "admin" in user_groups
+            is_admin = "admins" in user_groups
             log_event(
                 LOGGER,
                 "user_group_check",

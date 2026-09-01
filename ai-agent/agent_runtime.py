@@ -53,14 +53,14 @@ _BASE_SYSTEM_PROMPT = (
 )
 
 _PII_ADMIN_ADDENDUM = (
-    "\n\nPII policy (current user IS in the 'admin' group):\n"
+    "\n\nPII policy (current user IS in the 'admins' group):\n"
     "- You may display full unmasked user records including ssn, credit_card_number,\n"
     "  email, phone, and ip_address.\n"
     "- Do NOT call the `mask_pii` tool."
 )
 
 _PII_NON_ADMIN_ADDENDUM = (
-    "\n\nPII policy (current user is NOT in the 'admin' group):\n"
+    "\n\nPII policy (current user is NOT in the 'admins' group):\n"
     "- User records returned by any tool may contain sensitive PII fields:\n"
     "  ssn, credit_card_number, email, phone, ip_address.\n"
     "- You MUST call the `mask_pii` tool on every user record (or list of records)\n"
