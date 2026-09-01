@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "cachetools>=7.0.3",
     "fastapi>=0.135.1",
+    "prometheus-fastapi-instrumentator>=7.1.0",
     "hvac>=2.4.0",
     "opentelemetry-distro>=0.64b0",
     "opentelemetry-exporter-otlp>=1.43.0",

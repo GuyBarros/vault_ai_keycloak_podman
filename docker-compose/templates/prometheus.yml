@@ -49,3 +49,51 @@ scrape_configs:
     relabel_configs:
       - target_label: service
         replacement: postgres
+
+  # ── AI Agent (FastAPI + prometheus-fastapi-instrumentator) ──────────────────
+  - job_name: ai-agent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ai-agent:8000"]
+    relabel_configs:
+      - target_label: service
+        replacement: ai-agent
+
+  # ── User MCP (FastAPI wrapper around FastMCP) ───────────────────────────────
+  # user-mcp shares the PID namespace with spire-agent and inherits the bridge
+  # network, so it is not reachable by DNS from app-network. Scrape via the
+  # host-mapped port using Podman's built-in host alias instead.
+  - job_name: user-mcp
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.containers.internal:8090"]
+    relabel_configs:
+      - target_label: service
+        replacement: user-mcp
+
+  # ── Token Exchange (FastAPI) ─────────────────────────────────────────────────
+  - job_name: token-exchange
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["token-exchange:9090"]
+    relabel_configs:
+      - target_label: service
+        replacement: token-exchange
+
+  # ── Keycloak management endpoint (KC 23+) ───────────────────────────────────
+  - job_name: keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["keycloak:9000"]
+    relabel_configs:
+      - target_label: service
+        replacement: keycloak
+
+  # ── SPIRE Server telemetry ───────────────────────────────────────────────────
+  - job_name: spire-server
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["spire-server:9988"]
+    relabel_configs:
+      - target_label: service
+        replacement: spire-server

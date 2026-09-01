@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain.chat_models import init_chat_model
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent_runtime import AgentRuntime
 from config import Settings, load_settings
@@ -200,6 +201,7 @@ def create_app(
         yield
 
     app = FastAPI(lifespan=lifespan)
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
     app.state.settings = active_settings
     app.state.llm = llm or _build_base_llm(active_settings)
     # When set (in tests), this fixed runtime is used instead of building one
