@@ -94,6 +94,41 @@ class VaultClient:
         )
         return client_token
 
+    async def transform_encode(
+        self,
+        client_token: str,
+        role: str,
+        transformation: str,
+        value: str,
+    ) -> str:
+        """Encode/mask a value using Vault Transform Secret Engine."""
+        url = f"{self._addr}/v1/transform/encode/{role}"
+        payload = {"value": value, "transformation": transformation}
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(url, json=payload, headers=self._headers(client_token))
+        except httpx.HTTPError as exc:
+            raise AppError(502, "agent_error", f"Vault transform encode failed (transport): {exc}") from exc
+
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault transform encode rejected (status={resp.status_code}): {_safe_error_body(resp)}",
+            )
+        body = resp.json()
+        encoded = (body.get("data") or {}).get("encoded_value")
+        if encoded is None:
+            raise AppError(502, "agent_error", "Vault transform encode response missing encoded_value.")
+        log_event(
+            LOGGER,
+            "vault_transform_encode_ok",
+            level=logging.DEBUG,
+            message="Vault transform encode succeeded",
+            transformation=transformation,
+        )
+        return encoded
+
     async def read_database_creds(
         self, client_token: str, creds_path: str
     ) -> DynamicDbCredentials:

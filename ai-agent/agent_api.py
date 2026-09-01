@@ -22,10 +22,12 @@ from logging_utils import (
 )
 from mcp_client import extract_required_scopes, fetch_mcp_tools
 from models import AgentTokensResponse, ChatRequest
+from pii_masking import make_mask_pii_tool
 from scoped_tool import make_scoped_tool
 from security import (
     extract_agent_identity_claims,
     extract_bearer_token,
+    extract_user_groups,
     extract_user_identity_claims,
     validate_access_token,
 )
@@ -46,11 +48,13 @@ def _build_base_llm(settings: Settings):
 def _build_runtime_for_request(
     llm,
     tools: list,
+    is_admin: bool = False,
 ) -> AgentRuntime:
     return AgentRuntime(
         llm_with_tools=llm.bind_tools(tools),
         logger=LOGGER,
         tool_registry={tool.name: tool for tool in tools},
+        is_admin=is_admin,
     )
 
 
@@ -148,6 +152,20 @@ def _wrap_mcp_tools_with_per_call_obo(
             )
         )
     return wrapped
+
+
+def _read_vault_token_for_transform(token_service: OboTokenService) -> str:
+    """Return the agent's actor token to use as the Vault token for Transform calls.
+
+    The actor token is a Vault token that the agent already has on disk; it is
+    the appropriate credential for reaching the Transform secrets engine from
+    within the agent process.  If it is unavailable the masking tool will fall
+    back to local star-masking for every field.
+    """
+    try:
+        return token_service.read_actor_token()
+    except AppError:
+        return ""
 
 
 def _load_startup_agent_id(token_service: OboTokenService) -> str | None:
@@ -264,16 +282,29 @@ def create_app(
             message="Agent execution failed.",
         )
 
-    @app.post("/v1/agent/query")    
+    @app.post("/v1/agent/query")
     async def query_agent(request: Request, chat_request: ChatRequest):
         access_token: str | None = None
         preferred_username: str | None = None
+        is_admin: bool = False
         if not request.app.state.settings.bypass_auth_token_exchange:
             access_token = extract_bearer_token(request)
             access_token_payload = validate_access_token(access_token)
             preferred_username = extract_user_identity_claims(
                 access_token_payload
             )["preferred_username"]
+            user_groups = extract_user_groups(access_token_payload)
+            is_admin = "admin" in user_groups
+            log_event(
+                LOGGER,
+                "user_group_check",
+                level=logging.DEBUG,
+                message="Evaluated user group membership for PII policy",
+                request_id=request.state.request_id,
+                preferred_username=preferred_username,
+                groups=user_groups,
+                is_admin=is_admin,
+            )
         bind_log_context(preferred_username=preferred_username)
 
         runtime = request.app.state.agent_runtime
@@ -286,8 +317,17 @@ def create_app(
                 user_mcp_url=request.app.state.settings.user_mcp_url,
                 bypass=request.app.state.settings.bypass_auth_token_exchange,
             )
-            tools = list(LOCAL_TOOLS) + scoped_tools
-            runtime = _build_runtime_for_request(request.app.state.llm, tools)
+            # Build the mask_pii tool.  The Vault token is the agent's own
+            # actor token so it can reach the Transform secrets engine without
+            # requiring a per-user OBO for this internal operation.
+            vault_token = _read_vault_token_for_transform(request.app.state.token_service)
+            mask_pii_tool = make_mask_pii_tool(
+                vault_transform_url=request.app.state.settings.vault_transform_url,
+                vault_token=vault_token,
+                vault_role=request.app.state.settings.vault_transform_role,
+            )
+            tools = list(LOCAL_TOOLS) + scoped_tools + [mask_pii_tool]
+            runtime = _build_runtime_for_request(request.app.state.llm, tools, is_admin=is_admin)
 
         return await runtime.handle_request(
             chat_request=chat_request,

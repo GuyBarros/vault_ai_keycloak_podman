@@ -80,6 +80,10 @@ class Settings(BaseSettings):
         default=10.0, alias="USER_MCP_VAULT_TIMEOUT_SECONDS"
     )
 
+    # Vault Transform Secret Engine (PII masking)
+    transform_enabled: bool = Field(default=False, alias="USER_MCP_TRANSFORM_ENABLED")
+    transform_role: str = Field(default="", alias="USER_MCP_TRANSFORM_ROLE")
+
     @field_validator("log_level")
     @classmethod
     def _normalize_level(cls, value: str) -> str:

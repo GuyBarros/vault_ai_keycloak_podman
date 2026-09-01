@@ -24,6 +24,8 @@ class Settings:
     port: int
     log_level: str
     user_mcp_url: str
+    vault_transform_url: str
+    vault_transform_role: str
 
 
 def load_settings() -> Settings:
@@ -46,6 +48,10 @@ def load_settings() -> Settings:
         port=int(os.getenv("PORT", "8000")),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         user_mcp_url=os.getenv("USER_MCP_URL", "http://localhost:8090/mcp"),
+        vault_transform_url=os.getenv(
+            "VAULT_TRANSFORM_URL", "http://localhost:8200/v1/transform"
+        ),
+        vault_transform_role=os.getenv("VAULT_TRANSFORM_ROLE", "pii-masking"),
     )
     configure_logging(settings.log_level)
     serialized_settings = asdict(settings)
