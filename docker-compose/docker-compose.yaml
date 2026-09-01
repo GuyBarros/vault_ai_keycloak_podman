@@ -325,6 +325,8 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
+      ai-agent:
+        condition: service_started
     deploy:
       resources:
         limits:

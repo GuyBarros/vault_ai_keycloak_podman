@@ -19,4 +19,4 @@ INSERT INTO users (first_name, last_name, ssn, phone, email, credit_card_number,
 INSERT INTO users (first_name, last_name, ssn, phone, email, credit_card_number, ip_address) VALUES ('Charlotte', 'Anderson', '640-76-1524', '+1-074-756-9987', 'charlotte.anderson799@example.com', '2909-6058-3186-0764', '7.113.231.144') ON CONFLICT (email) DO NOTHING;
 INSERT INTO users (first_name, last_name, ssn, phone, email, credit_card_number, ip_address) VALUES ('Noah', 'Miller', '694-46-9494', '+1-770-013-9159', 'noah.miller24@example.com', '8372-4679-0078-0733', '78.215.154.246') ON CONFLICT (email) DO NOTHING;
 
-CREATE DATABASE litellm;
+SELECT 'CREATE DATABASE litellm' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'litellm')\gexec

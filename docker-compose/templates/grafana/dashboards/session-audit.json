@@ -1,0 +1,541 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana",    "id": "grafana",    "name": "Grafana",    "version": "11.0.0" },
+    { "type": "datasource", "id": "loki",       "name": "Loki",       "version": "1.0.0" },
+    { "type": "panel",      "id": "logs",       "name": "Logs",       "version": "" },
+    { "type": "panel",      "id": "table",      "name": "Table",      "version": "" },
+    { "type": "panel",      "id": "stat",       "name": "Stat",       "version": "" },
+    { "type": "panel",      "id": "timeseries", "name": "Time series","version": "" }
+  ],
+  "description": "Per-request audit: user → agent → scope → tool → dynamic DB credential",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "loki", "uid": "loki" },
+        "definition": "label_values(preferred_username)",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "name": "user",
+        "label": "User",
+        "options": [],
+        "query": "label_values({container=~\"ai-agent|user-mcp|token-exchange\"}, preferred_username)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "loki", "uid": "loki" },
+        "definition": "label_values(container)",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": "ai-agent|user-mcp|token-exchange",
+        "multi": false,
+        "name": "service",
+        "label": "Service",
+        "options": [],
+        "query": "label_values({container=~\"ai-agent|user-mcp|token-exchange\"}, container)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "📊 Session Summary",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Distinct users that have sent at least one request to the agent in the selected time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short", "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 10,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "count(sum by (preferred_username) (count_over_time({container=\"ai-agent\", event=\"agent_request_started\"} | json | preferred_username=~\"$user\" [$__range])))",
+        "legendFormat": "Distinct users"
+      }],
+      "title": "Distinct Users",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Total agent requests in the selected time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short", "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 11,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({container=\"ai-agent\", event=\"agent_request_started\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "legendFormat": "Requests"
+      }],
+      "title": "Total Agent Requests",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Distinct MCP tools called by the agent (scoped_tool_invoke events) in the selected range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
+          "unit": "short", "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 12,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "legendFormat": "Tool calls"
+      }],
+      "title": "Total Tool Calls",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Successful OBO token exchanges (new dynamic credentials issued) in the selected range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "short", "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 13,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({container=\"user-mcp\", event=\"db_call\"} | json | db_username!=\"\" [$__range]))",
+        "legendFormat": "DB cred uses"
+      }],
+      "title": "Dynamic DB Cred Uses",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Failed OBO token exchanges (permission denied on tool calls).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 5 }
+          ]},
+          "unit": "short", "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 14,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({container=\"ai-agent\", event=\"scoped_tool_token_exchange_failed\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "legendFormat": "Denied"
+      }],
+      "title": "Token Exchange Failures",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Rate of agent requests and tool calls over time, broken down by event type.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 5 },
+      "id": 15,
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({container=\"ai-agent\", event=\"agent_request_started\"} | json | preferred_username=~\"$user\" [2m]))",
+          "legendFormat": "Requests/s"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [2m]))",
+          "legendFormat": "Tool calls/s"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({container=\"ai-agent\", event=\"scoped_tool_token_exchange_failed\"} | json | preferred_username=~\"$user\" [2m]))",
+          "legendFormat": "Failures/s"
+        }
+      ],
+      "title": "Request & Tool Call Rate",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Tool calls per user over time. Each series = one username.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 5 },
+      "id": 16,
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (preferred_username) (count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [2m]))",
+        "legendFormat": "{{preferred_username}}"
+      }],
+      "title": "Tool Calls by User",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Tool calls by tool name over time. Shows which MCP tools are being invoked most.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 5 },
+      "id": 17,
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (tool) (count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [2m]))",
+        "legendFormat": "{{tool}}"
+      }],
+      "title": "Tool Calls by Tool Name",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
+      "id": 20,
+      "title": "🔄 OBO Token Exchange Events",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Every OBO token exchange attempt. Shows user, agent, requested scope, and whether it succeeded. Each row is one exchange event from token-exchange or ai-agent.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 13 },
+      "id": 21,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{container=~\"ai-agent|token-exchange\"} | json | event=~\"identity_broker_call|obo_token_exchange_completed|scoped_tool_token_exchange_failed|keycloak_token_exchange_http_error\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] scope={{.scope}} event={{.event}} request_id={{.request_id}}\"",
+        "legendFormat": ""
+      }],
+      "title": "OBO Exchange Events (user → agent, scope)",
+      "type": "logs"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 30,
+      "title": "🛠️ MCP Tool Invocations",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Every MCP tool call by the agent. Shows the user, the tool name, the scopes required, and the request_id to correlate with the DB credential row below.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "id": 31,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] tool={{.tool}} scopes={{.required_scopes}} request_id={{.request_id}}\"",
+          "legendFormat": ""
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{container=\"ai-agent\", event=\"scoped_tool_token_exchange_failed\"} | json | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] DENIED tool={{.tool}} scopes={{.required_scopes}} error={{.error_message}} request_id={{.request_id}}\"",
+          "legendFormat": ""
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{container=\"user-mcp\", event=\"tool_invoked\"} | json | preferred_username=~\"$user\" | line_format \"[user-mcp] tool={{.tool}} scopes={{.required_scopes}} user={{.preferred_username}}\"",
+          "legendFormat": ""
+        }
+      ],
+      "title": "Tool Invocations (user, tool, required scopes)",
+      "type": "logs"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "id": 40,
+      "title": "🗄️ Dynamic Database Credentials",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Every dynamic Postgres credential issued or used. The db_username is the ephemeral role created by Vault for this specific request. lease_id identifies the Vault lease — use it to trace back to the tool call via request_id.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 35 },
+      "id": 41,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{container=\"user-mcp\", event=\"db_call\"} | json | db_username!=\"\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] db_user={{.db_username}} path={{.db_creds_path}} lease={{.lease_id}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
+          "legendFormat": ""
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{container=\"user-mcp\", event=\"vault_db_creds_issued\"} | json | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
+          "legendFormat": ""
+        }
+      ],
+      "title": "Dynamic DB Credentials (ephemeral db_user, lease, TTL)",
+      "type": "logs"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+      "id": 50,
+      "title": "🔗 Full Request Trace — correlate by request_id",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "All log lines across ai-agent, token-exchange, and user-mcp for the selected time range. Use the event field to follow a single request_id from agent → OBO exchange → tool call → DB credential. Filter by entering a request_id UUID in the search bar above.",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 46 },
+      "id": 51,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true
+      },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | event=~\"agent_request_started|identity_broker_call|obo_token_exchange_completed|scoped_tool_invoke|scoped_tool_token_exchange_failed|tool_invoked|db_call|vault_db_creds_issued|vault_login_ok\" | preferred_username=~\"$user\"",
+        "legendFormat": ""
+      }],
+      "title": "Correlated Request Trace (all services)",
+      "type": "logs"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 60 },
+      "id": 60,
+      "title": "📋 Scope × Tool Breakdown",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Number of tool calls per (user, tool, scope) combination. Shows exactly who asked the agent to do what, and what scope that required.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "User" },         "properties": [{ "id": "custom.width", "value": 120 }] },
+          { "matcher": { "id": "byName", "options": "Tool" },         "properties": [{ "id": "custom.width", "value": 200 }] },
+          { "matcher": { "id": "byName", "options": "Scope" },        "properties": [{ "id": "custom.width", "value": 150 }] },
+          { "matcher": { "id": "byName", "options": "Calls" },        "properties": [{ "id": "custom.width", "value": 80 }, { "id": "color", "value": { "mode": "thresholds" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } ]},
+          { "matcher": { "id": "byName", "options": "Denied" },       "properties": [{ "id": "custom.width", "value": 80 }, { "id": "color", "value": { "mode": "thresholds" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }]}
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 61 },
+      "id": 61,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "mode": "columns" } },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "preferred_username": "User",
+              "tool":               "Tool",
+              "required_scopes":    "Scope",
+              "Value":              "Calls"
+            }
+          }
+        },
+        { "id": "sortBy", "options": { "fields": [{ "desc": true, "displayName": "Calls" }] } }
+      ],
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (preferred_username, tool, required_scopes) (count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "legendFormat": "{{preferred_username}} / {{tool}} / {{required_scopes}}",
+        "instant": true
+      }],
+      "title": "Tool Calls by User × Tool × Scope",
+      "type": "table"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Dynamic DB usernames issued, with the user and tool that triggered them. Each row = one Vault-issued ephemeral Postgres role.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "User" },        "properties": [{ "id": "custom.width", "value": 120 }] },
+          { "matcher": { "id": "byName", "options": "DB Username" }, "properties": [{ "id": "custom.width", "value": 240 }] },
+          { "matcher": { "id": "byName", "options": "DB Path" },     "properties": [{ "id": "custom.width", "value": 260 }] },
+          { "matcher": { "id": "byName", "options": "Uses" },        "properties": [{ "id": "custom.width", "value": 70 }]}
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 61 },
+      "id": 62,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "mode": "columns" } },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "preferred_username": "User",
+              "db_username":        "DB Username",
+              "db_creds_path":      "DB Path",
+              "Value":              "Uses"
+            }
+          }
+        },
+        { "id": "sortBy", "options": { "fields": [{ "desc": true, "displayName": "Uses" }] } }
+      ],
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (preferred_username, db_username, db_creds_path) (count_over_time({container=\"user-mcp\", event=\"db_call\"} | json | db_username!=\"\" | preferred_username=~\"$user\" [$__range]))",
+        "legendFormat": "{{preferred_username}} / {{db_username}} / {{db_creds_path}}",
+        "instant": true
+      }],
+      "title": "Dynamic DB Users Issued by Caller",
+      "type": "table"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 71 },
+      "id": 70,
+      "title": "⚠️ Errors & Denied Requests",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "All error and warning log lines across the full stack — token exchange failures, JWT validation errors, Vault login rejections, and scope denials.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 72 },
+      "id": 71,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\", level=~\"error|warning|warn\"} | json | preferred_username=~\"$user\"",
+        "legendFormat": ""
+      }],
+      "title": "Error & Warning Log Lines",
+      "type": "logs"
+    }
+
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["ai-iam", "audit", "obo", "session"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AI IAM — Session Audit",
+  "uid": "ai-iam-session-audit",
+  "version": 1
+}

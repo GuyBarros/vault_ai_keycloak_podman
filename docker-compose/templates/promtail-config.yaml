@@ -1,0 +1,72 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+
+  # ── Container json-file logs ────────────────────────────────────────────────
+  # Podman writes json-file logs to:
+  #   /var/lib/containers/storage/overlay-containers/<id>/userdata/ctr.log
+  # We glob all ctr.log files and use the __path__ label + a relabel rule that
+  # sets the container name from the `tag` field baked into each log line by
+  # the json-file driver (options.tag in docker-compose.yaml).
+  - job_name: containers
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: containers
+          __path__: /var/lib/containers/storage/overlay-containers/*/userdata/ctr.log
+
+    pipeline_stages:
+      # The json-file driver wraps each line: {"log":"<app-line>\n","stream":"stdout","time":"...","attrs":{"tag":"<name>"}}
+      - json:
+          expressions:
+            app_log: log
+            stream:  stream
+            tag:     attrs.tag
+
+      # Promote the container name (from options.tag) to a Loki label
+      - labels:
+          stream:
+          tag:
+
+      # Only keep log lines from our three audit services
+      - match:
+          selector: '{tag=~"ai-agent|user-mcp|token-exchange"}'
+          stages:
+            # Now parse the inner app JSON line
+            - json:
+                source: app_log
+                expressions:
+                  event:              event
+                  level:              level
+                  preferred_username: preferred_username
+                  agent_id:           agent_id
+                  auth_scope:         auth_scope
+                  tool:               tool
+                  required_scopes:    required_scopes
+                  db_username:        db_username
+                  db_creds_path:      db_creds_path
+                  lease_id:           lease_id
+                  request_id:         request_id
+
+            # Promote low-cardinality fields as Loki labels
+            - labels:
+                event:
+                level:
+                container: tag
+
+            # Replace the raw wrapper line with just the inner app JSON
+            - output:
+                source: app_log
+
+      # Drop lines from containers we don't care about
+      - match:
+          selector: '{tag!~"ai-agent|user-mcp|token-exchange"}'
+          action: drop

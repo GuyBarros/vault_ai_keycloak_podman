@@ -50,7 +50,18 @@ echo "$JOIN_TOKEN" > /tmp/spire-join-token/join-token
 echo "spire-setup: registering user-mcp workload entry..."
 
 # Register the user-mcp workload bound to unix UID 1000.
-$SPIRE_CLI entry create \
+# Ignore AlreadyExists so re-runs on persisted spire-data don't fail.
+create_entry() {
+  out=$($SPIRE_CLI entry create "$@" 2>&1) && echo "$out" && return 0
+  if echo "$out" | grep -q "AlreadyExists"; then
+    echo "spire-setup: entry already exists, continuing."
+    return 0
+  fi
+  echo "$out" >&2
+  return 1
+}
+
+create_entry \
   -spiffeID "spiffe://example.org/user-mcp" \
   -parentID "spiffe://example.org/agent/user-mcp" \
   -selector "unix:uid:1000" \
@@ -60,8 +71,7 @@ $SPIRE_CLI entry create \
 
 echo "spire-setup: registering ai-agent (vault-agent) workload entry..."
 
-# Register the ai-agent workload bound to unix UID 0 (vault-agent runs as root).
-$SPIRE_CLI entry create \
+create_entry \
   -spiffeID "spiffe://example.org/ai-agent" \
   -parentID "spiffe://example.org/agent/user-mcp" \
   -selector "unix:uid:0" \
