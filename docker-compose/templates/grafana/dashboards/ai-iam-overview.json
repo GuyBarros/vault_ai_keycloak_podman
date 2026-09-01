@@ -1,0 +1,794 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana",    "id": "grafana",    "name": "Grafana",    "version": "11.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel",      "id": "timeseries", "name": "Time series","version": "" },
+    { "type": "panel",      "id": "stat",       "name": "Stat",       "version": "" },
+    { "type": "panel",      "id": "gauge",      "name": "Gauge",      "version": "" },
+    { "type": "panel",      "id": "table",      "name": "Table",      "version": "" }
+  ],
+  "description": "AI IAM Stack — active users, online agents, OBO flows and dynamic credentials",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 200,
+      "title": "👤 Active Users & Sessions",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Number of distinct user JWT logins against the jwt-user-mcp mount in the last 5 minutes. Each login = a user accessing the web app through the agent.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "blue",  "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 201,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto", "orientation": "auto" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "ceil(increase(vault_route_create_auth_jwt_user_mcp__count[5m]))",
+        "legendFormat": "Logins (5 m)"
+      }],
+      "title": "User Logins (5 m)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative user JWT logins since stack start.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 202,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "vault_route_create_auth_jwt_user_mcp__count",
+        "legendFormat": "Total logins"
+      }],
+      "title": "Total User Logins",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Active Vault leases. Each lease represents either an active OBO token or a dynamic database credential currently in use.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 10 },
+            { "color": "red",    "value": 30 }
+          ]},
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 203,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "vault_expire_num_leases",
+        "legendFormat": "Active leases"
+      }],
+      "title": "Active Vault Leases",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Active Vault tokens (proxy for concurrent web-app sessions + service tokens).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 20 }
+          ]},
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 204,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "vault_token_count",
+        "legendFormat": "Tokens"
+      }],
+      "title": "Active Vault Tokens",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Rate of user JWT logins per minute over time — shows activity spikes on the web app.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "id": 205,
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_create_auth_jwt_user_mcp__count[2m])",
+          "legendFormat": "User logins/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_expire_register_auth_count[2m])",
+          "legendFormat": "Auth token registrations/s"
+        }
+      ],
+      "title": "Web App Login Rate",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 210,
+      "title": "🤖 Agent Instances Online",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Vault is up and unsealed — the core IAM authority is reachable.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",   "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "mappings": [{ "options": { "0": { "text": "Down" }, "1": { "text": "Online" } }, "type": "value" }],
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 0, "y": 10 },
+      "id": 211,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "value" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "vault_core_unsealed", "legendFormat": "Vault" }],
+      "title": "Vault",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "ai-agent container is up (cAdvisor last seen within 60 s).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",   "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "mappings": [{ "options": { "0": { "text": "Offline" }, "1": { "text": "Online" } }, "type": "value" }],
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 3, "y": 10 },
+      "id": 212,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "value" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "scalar(clamp_max(count(time() - container_last_seen{name=\"ai-agent\"} < 60), 1))",
+        "legendFormat": "ai-agent"
+      }],
+      "title": "ai-agent",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "user-mcp container is up (cAdvisor last seen within 60 s).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",   "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "mappings": [{ "options": { "0": { "text": "Offline" }, "1": { "text": "Online" } }, "type": "value" }],
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 6, "y": 10 },
+      "id": 213,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "value" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "scalar(clamp_max(count(time() - container_last_seen{name=\"user-mcp\"} < 60), 1))",
+        "legendFormat": "user-mcp"
+      }],
+      "title": "user-mcp",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "token-exchange service is reachable.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",   "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "mappings": [{ "options": { "0": { "text": "Offline" }, "1": { "text": "Online" } }, "type": "value" }],
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 9, "y": 10 },
+      "id": 214,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "value" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "scalar(clamp_max(count(time() - container_last_seen{name=\"token-exchange\"} < 60), 1))",
+        "legendFormat": "token-exchange"
+      }],
+      "title": "token-exchange",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "litellm proxy is reachable.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",   "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "mappings": [{ "options": { "0": { "text": "Offline" }, "1": { "text": "Online" } }, "type": "value" }],
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 12, "y": 10 },
+      "id": 215,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "value" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "scalar(clamp_max(count(time() - container_last_seen{name=\"litellm\"} < 60), 1))",
+        "legendFormat": "litellm"
+      }],
+      "title": "litellm",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "keycloak is reachable.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",   "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "mappings": [{ "options": { "0": { "text": "Offline" }, "1": { "text": "Online" } }, "type": "value" }],
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 15, "y": 10 },
+      "id": 216,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "value" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "scalar(clamp_max(count(time() - container_last_seen{name=\"keycloak\"} < 60), 1))",
+        "legendFormat": "keycloak"
+      }],
+      "title": "keycloak",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "SPIFFE logins (jwt-spiffe mount) = vault-agent/ai-agent authenticating via SVID. A sustained rate means the agent is alive and renewing its SPIFFE credential.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 13 },
+      "id": 217,
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
+          "legendFormat": "SPIFFE logins/s (new)"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_update_auth_jwt_spiffe__count[2m])",
+          "legendFormat": "SPIFFE renewals/s"
+        }
+      ],
+      "title": "Agent SPIFFE Auth Activity",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative SPIFFE logins and renewals since stack start. A non-zero value confirms vault-agent has authenticated at least once via its SVID.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 13 },
+      "id": 218,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vault_route_create_auth_jwt_spiffe__count",
+          "legendFormat": "SPIFFE logins total"
+        }
+      ],
+      "title": "Total SPIFFE Logins",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Total SPIFFE token renewals. vault-agent renews its token every ~30 min; a rising count = agent is continuously online.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",   "value": null },
+            { "color": "green", "value": 1 }
+          ]}
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 13 },
+      "id": 219,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "vault_route_update_auth_jwt_spiffe__count",
+        "legendFormat": "Renewals"
+      }],
+      "title": "Agent Token Renewals",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Container CPU usage for the core AI/IAM services — a flat line near zero for ai-agent between requests is normal.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 1 }
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 17 },
+      "id": 220,
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "rate(container_cpu_usage_seconds_total{name=~\"ai-agent|user-mcp|token-exchange|vault|keycloak|litellm\",name!=\"\"}[1m])",
+        "legendFormat": "{{name}}"
+      }],
+      "title": "Agent / Service CPU",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 230,
+      "title": "🔑 OBO Flow & Dynamic Credentials",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Total active Vault leases right now. Leases are created for each dynamic DB credential and each OIDC actor token. A rising count without corresponding revocations may indicate a leak.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green",  "value": null },
+            { "color": "yellow", "value": 15 },
+            { "color": "red",    "value": 40 }
+          ]},
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 24 },
+      "id": 231,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "vault_expire_num_leases", "legendFormat": "Leases" }],
+      "title": "Active Leases Now",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative dynamic Postgres credentials issued by Vault database engine. Each issuance = a user-mcp tool call that needed DB access.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 24 },
+      "id": 232,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "vault_database_NewUser_count", "legendFormat": "DB creds" }],
+      "title": "Dynamic DB Creds Issued",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative DB credential revocations. Should track close to issuances — a large gap means credentials are expiring rather than being cleanly revoked.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 24 },
+      "id": 233,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "vault_database_DeleteUser_count", "legendFormat": "Revocations" }],
+      "title": "DB Creds Revoked",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative PII transform encode calls (mask-ssn + mask-credit-card). Each call = a user record returned by user-mcp that contained sensitive fields.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 24 },
+      "id": 234,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "vault_route_create_transform__count", "legendFormat": "PII masks" }],
+      "title": "PII Transform Calls",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Vault OIDC token reads = actor token mints for OBO flow. Each read = ai-agent refreshing its actor token.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "teal", "value": null }] },
+          "unit": "short",
+          "noValue": "0"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 24 },
+      "id": 235,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "vault_route_read_identity__count", "legendFormat": "Actor tokens" }],
+      "title": "Actor Token Mints (OIDC)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Active leases over time. Spikes indicate concurrent OBO token exchanges or DB credential bursts. Drops indicate revocations or TTL expiry.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 15 }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 236,
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vault_expire_num_leases",
+          "legendFormat": "Active leases"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "ceil(increase(vault_database_NewUser_count[5m]))",
+          "legendFormat": "DB creds issued (5 m)"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "ceil(increase(vault_database_DeleteUser_count[5m]))",
+          "legendFormat": "DB creds revoked (5 m)"
+        }
+      ],
+      "title": "Active Leases & Dynamic Credentials Over Time",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "OBO flow activity: DB credential issuances (= user-mcp tool calls needing DB), JWT logins by users, and PII transform calls. Each point in time shows which types of operations were occurring.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 237,
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_read_database__count[2m])",
+          "legendFormat": "DB cred requests/s (users.read scope)"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_create_auth_jwt_user_mcp__count[2m])",
+          "legendFormat": "User JWT logins/s (users.write scope implied)"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_create_transform__count[2m])",
+          "legendFormat": "PII transform/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_read_identity__count[2m])",
+          "legendFormat": "Actor token mints/s (OBO exchange trigger)"
+        }
+      ],
+      "title": "OBO Flow Activity by Operation Type",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Vault lease expiration queue length. Non-zero = leases expiring soon and being processed. A persistently large queue may indicate token storms.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 1 }
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
+      "id": 238,
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "vault_expire_job_manager_queue_length",
+        "legendFormat": "Expiry queue"
+      }],
+      "title": "Lease Expiry Queue",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Vault request latency on the routes most relevant to the OBO and credential flow: database reads (credential fetch), identity reads (actor token), and jwt-user-mcp logins (user auth).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 1 }
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
+      "id": 239,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(vault_route_read_database__bucket[5m]))",
+          "legendFormat": "p95 DB cred fetch"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(vault_route_read_identity__bucket[5m]))",
+          "legendFormat": "p95 identity/OIDC read"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(vault_route_create_auth_jwt_user_mcp__bucket[5m]))",
+          "legendFormat": "p95 user JWT login"
+        }
+      ],
+      "title": "OBO & Credential Path Latency (p95)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 42 },
+      "id": 300,
+      "title": "🔐 Vault Core",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "red", "value": null },
+                { "color": "green", "value": 1 }
+              ]},
+              "mappings": [{ "options": { "0": { "text": "Sealed" }, "1": { "text": "Unsealed" } }, "type": "value" }],
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 43 },
+          "id": 301,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+          "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "vault_core_unsealed", "legendFormat": "Vault" }],
+          "title": "Vault Status",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } } },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
+          "id": 302,
+          "targets": [
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(vault_core_handle_request_count[1m])", "legendFormat": "Requests/s" },
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(vault_core_handle_login_request_count[1m])", "legendFormat": "Logins/s" }
+          ],
+          "title": "Vault Request Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "palette-classic" } } },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 },
+          "id": 303,
+          "targets": [
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.99, rate(vault_core_handle_request_duration_ms_bucket[5m]))", "legendFormat": "p99" },
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.50, rate(vault_core_handle_request_duration_ms_bucket[5m]))", "legendFormat": "p50" }
+          ],
+          "title": "Vault Request Latency (ms)",
+          "type": "timeseries"
+        }
+      ]
+    },
+
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "id": 400,
+      "title": "🐳 Container Resources",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "percentunit", "color": { "mode": "palette-classic" } } },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+          "id": 401,
+          "targets": [{
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "rate(container_cpu_usage_seconds_total{name=~\"ai-agent|user-mcp|token-exchange|vault|keycloak|litellm\",name!=\"\"}[1m])",
+            "legendFormat": "{{name}}"
+          }],
+          "title": "CPU Usage by Container",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" } } },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+          "id": 402,
+          "targets": [{
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "container_memory_working_set_bytes{name=~\"ai-agent|user-mcp|token-exchange|vault|keycloak|litellm\",name!=\"\"}",
+            "legendFormat": "{{name}}"
+          }],
+          "title": "Memory (Working Set) by Container",
+          "type": "timeseries"
+        }
+      ]
+    },
+
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 44 },
+      "id": 500,
+      "title": "🗄️ Postgres",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 50 }] } } },
+          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 45 },
+          "id": 501,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+          "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "pg_stat_database_numbackends{datname=\"users\"}", "legendFormat": "Connections" }],
+          "title": "Active Connections",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 49 },
+          "id": 502,
+          "targets": [
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(pg_stat_database_xact_commit_total{datname=\"users\"}[1m])", "legendFormat": "Commits/s" },
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(pg_stat_database_xact_rollback_total{datname=\"users\"}[1m])", "legendFormat": "Rollbacks/s" }
+          ],
+          "title": "Transaction Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 49 },
+          "id": 503,
+          "targets": [
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(pg_stat_database_blks_hit_total{datname=\"users\"}[1m])", "legendFormat": "Cache hits/s" },
+            { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(pg_stat_database_blks_read_total{datname=\"users\"}[1m])", "legendFormat": "Disk reads/s" }
+          ],
+          "title": "Buffer Cache (users db)",
+          "type": "timeseries"
+        }
+      ]
+    }
+
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["ai-iam", "vault", "keycloak", "spire", "obo"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AI IAM Stack",
+  "uid": "ai-iam-stack",
+  "version": 2
+}

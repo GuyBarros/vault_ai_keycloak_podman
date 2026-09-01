@@ -69,6 +69,37 @@ def extract_user_identity_claims(access_token_payload: dict[str, Any]) -> dict[s
     }
 
 
+def extract_user_groups(access_token_payload: dict[str, Any]) -> list[str]:
+    """Return the list of groups the authenticated user belongs to.
+
+    Keycloak places group membership in the top-level ``groups`` claim when a
+    groups mapper is configured on the client.  It may also surface roles under
+    ``realm_access.roles``.  Both sources are merged so callers can check
+    membership with a simple ``"admin" in groups`` regardless of how Keycloak
+    was configured.
+    """
+    groups: list[str] = []
+
+    # Top-level "groups" claim (e.g. ["/admin", "admin"])
+    raw_groups = access_token_payload.get("groups")
+    if isinstance(raw_groups, list):
+        for g in raw_groups:
+            if isinstance(g, str):
+                # Strip leading slash added by Keycloak's full-path group mapper.
+                groups.append(g.lstrip("/"))
+
+    # realm_access.roles (Keycloak realm role mapper)
+    realm_access = access_token_payload.get("realm_access")
+    if isinstance(realm_access, dict):
+        roles = realm_access.get("roles")
+        if isinstance(roles, list):
+            for r in roles:
+                if isinstance(r, str) and r not in groups:
+                    groups.append(r)
+
+    return groups
+
+
 def extract_agent_identity_claims(actor_token: str | None) -> dict[str, str | None]:
     if not actor_token:
         return {"actor_agent_id": None}

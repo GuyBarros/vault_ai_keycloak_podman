@@ -21,6 +21,10 @@ mcp_servers:
 router_settings: 
   default_model: watsonx-openai
 
+litellm_settings:
+  success_callback: ["prometheus"]
+  failure_callback: ["prometheus"]
+
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
   database_url: "postgresql://postgres:postgres@postgres:5432/litellm"

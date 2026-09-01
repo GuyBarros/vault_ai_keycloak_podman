@@ -26,6 +26,7 @@ services:
       GENERIC_USERNAME_ATTRIBUTE: "preferred_username"
       GENERIC_EMAIL_ATTRIBUTE: "email"
       PROXY_ADMIN_ID: "admin@demo.com"
+      PROMETHEUS_ENABLED: "true"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
       interval: 5s
@@ -118,6 +119,8 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+      jwks-proxy:
+        condition: service_started
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: root
@@ -130,7 +133,6 @@ services:
     volumes:
       - ./templates/vault-setup.sh:/vault-setup/vault-setup.sh:ro
       - ./templates/opa_policies/:/vault-setup/opa_policies:ro
-      - vault-agent-creds:/vault-agent-creds
     networks:
       - app-network
 
@@ -140,6 +142,7 @@ services:
     container_name: keycloak
     ports:
       - "8081:8080"
+      - "127.0.0.1:9000:9000"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
@@ -151,6 +154,8 @@ services:
       # reach Keycloak using the internal Docker hostname even though the
       # declared hostname is localhost:8081.
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_MANAGEMENT_PORT: "9000"
+      KC_METRICS_ENABLED: "true"
     volumes:
       - ./templates/demo-realm.json:/opt/keycloak/data/import/demo-realm.json:ro
     command: start-dev --import-realm --features=token-exchange-delegation,parameterized-scopes
@@ -164,16 +169,117 @@ services:
       - app-network
 
 
+  # ---------------------------------------------------------------------------
+  # JWKS Proxy — serves a standard-format JWKS from the SPIRE bundle endpoint.
+  # Vault's jwt auth backend fetches this URL each time it needs to verify a
+  # token; the proxy strips SPIRE-specific fields that break Vault's parser.
+  # ---------------------------------------------------------------------------
+  jwks-proxy:
+    image: user-mcp:local
+    container_name: jwks-proxy
+    restart: unless-stopped
+    entrypoint: ["python3", "/jwks-proxy/jwks-proxy.py"]
+    volumes:
+      - ./templates/jwks-proxy.py:/jwks-proxy/jwks-proxy.py:ro
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    networks:
+      app-network:
+        aliases:
+          - jwks-proxy
+
+  # ---------------------------------------------------------------------------
+  # SPIRE Server — issues SVIDs for workloads registered in this trust domain.
+  # ---------------------------------------------------------------------------
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.11.1
+    container_name: spire-server
+    hostname: spire-server
+    command:
+      - -config
+      - /etc/spire/server/server.conf
+    ports:
+      - "8082:8082"
+      - "127.0.0.1:9988:9988"
+    volumes:
+      - ./templates/spire/server.conf:/etc/spire/server/server.conf:ro
+      - spire-data:/opt/spire/data
+      - spire-server-socket:/tmp/spire-server
+      - spire-join-token:/tmp/spire-join-token
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-server", "healthcheck", "-socketPath", "/tmp/spire-server/private/api.sock"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # SPIRE Agent — attests workloads and serves the Workload API socket.
+  # Shares the socket volume with user-mcp.
+  # ---------------------------------------------------------------------------
+  spire-agent:
+    # Use the same Alpine-based vault image so we have /bin/sh to read the
+    # join-token file.  The spire-agent binary is downloaded at startup.
+    image: hashicorp/vault:2.0.4
+    container_name: spire-agent
+    hostname: spire-agent
+    user: root
+    entrypoint: /bin/sh
+    command: /spire-agent/spire-agent-start.sh
+    volumes:
+      - ./templates/spire/agent.conf:/etc/spire/agent/agent.conf:ro
+      - ./templates/spire/spire-agent-start.sh:/spire-agent/spire-agent-start.sh:ro
+      - spire-join-token:/tmp/spire-join-token:ro
+      - spire-agent-socket:/tmp/spire-agent
+    depends_on:
+      spire-server:
+        condition: service_healthy
+      spire-setup:
+        condition: service_completed_successfully
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # SPIRE bootstrap — registers the user-mcp workload entry with the server.
+  # Uses the hashicorp/vault image (alpine-based, has wget + sh) to run the
+  # spire-server CLI via the admin socket on the shared volume.
+  # ---------------------------------------------------------------------------
+  spire-setup:
+    image: hashicorp/vault:2.0.4
+    container_name: spire-setup
+    restart: "no"
+    entrypoint: /bin/sh
+    command: /spire-setup/spire-setup.sh
+    volumes:
+      - ./templates/spire/spire-setup.sh:/spire-setup/spire-setup.sh:ro
+      - spire-server-socket:/tmp/spire-server
+      - spire-join-token:/tmp/spire-join-token
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    networks:
+      - app-network
+
   user-mcp:
     build:
       context: ../user-mcp
       dockerfile: Dockerfile
     image: user-mcp:local
     container_name: user-mcp
+    # Share the PID namespace with spire-agent so SO_PEERCRED on the Workload
+    # API socket returns a PID that spire-agent can resolve in /proc.
+    pid: "service:spire-agent"
     ports:
       - "8090:8090"
     env_file:
       - ./templates/user-mcp.env
+    environment:
+      LOKI_URL: "http://loki:3100"
+    volumes:
+      - spire-agent-socket:/tmp/spire-agent:ro
     depends_on:
       vault-setup:
         condition: service_completed_successfully
@@ -181,8 +287,16 @@ services:
         condition: service_completed_successfully
       keycloak:
         condition: service_healthy
+      spire-setup:
+        condition: service_completed_successfully
+      spire-agent:
+        condition: service_started
+      loki:
+        condition: service_started
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - user-mcp
 
   token-exchange:
     build:
@@ -191,17 +305,20 @@ services:
     image: token-exchange:local
     container_name: token-exchange
     ports:
-      - "9090:9090"
+      - "9091:9090"
     env_file:
       - ./templates/token-exchange.env
     environment:
       IDENTITY_BROKER_VAULT_ADDR: http://vault:8200
       IDENTITY_BROKER_KEYCLOAK_URL: http://keycloak:8080
+      LOKI_URL: "http://loki:3100"
     depends_on:
       vault:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+      loki:
+        condition: service_started
     networks:
       - app-network
 
@@ -214,7 +331,7 @@ services:
     ports:
       - "8080:8080"
     environment:     
-      NEXT_PUBLIC_CUSTOM_AUDIENCE: "cIAMbelle"
+      NEXT_PUBLIC_CUSTOM_AUDIENCE: "IAM"
       AI_AGENT_API_URL: "http://ai-agent:8000"
       COOKIE_SECURE: "false"
     env_file:
@@ -222,6 +339,8 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
+      ai-agent:
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -242,19 +361,28 @@ services:
     container_name: vault-agent
     restart: unless-stopped
     user: root
+    # Share the PID namespace with spire-agent so SO_PEERCRED on the Workload
+    # API socket returns a PID that spire-agent can resolve in /proc.
+    pid: "service:spire-agent"
     depends_on:
       vault-setup:
         condition: service_completed_successfully
+      spire-setup:
+        condition: service_completed_successfully
+      spire-agent:
+        condition: service_started
     environment:
       VAULT_ADDR: http://vault:8200
     entrypoint:
-      - vault
-      - agent
-      - -config=/vault/config/vault-agent.hcl
+      - /bin/sh
+      - /vault/config/vault-agent-start.sh
     volumes:
       - ./templates/vault-agent.hcl:/vault/config/vault-agent.hcl:ro
-      # AppRole credentials written by vault-setup.
-      - vault-agent-creds:/vault/creds:ro
+      - ./templates/vault-agent-start.sh:/vault/config/vault-agent-start.sh:ro
+      # SPIRE Workload API socket for SPIFFE JWT-SVID attestation.
+      - spire-agent-socket:/tmp/spire-agent:ro
+      # Tmpfs for the JWT-SVID token file — never written to disk.
+      - spire-jwt:/tmp/spire-jwt
       # Shared in-memory volume — secrets are never written to disk.
       - vault-secrets:/vault/secrets
     networks:
@@ -277,10 +405,13 @@ services:
         condition: service_started
       user-mcp:
         condition: service_started
+      loki:
+        condition: service_started
     environment:
       TOKEN_EXCHANGE_URL: "http://token-exchange:9090/v1/identity/obo-token"
       ACTOR_TOKEN_PATH: "/vault/secrets/actor-token"
       USER_MCP_URL: "http://user-mcp:8090/mcp"
+      LOKI_URL: "http://loki:3100"
     volumes:
       - ./templates/ai-agent.env:/app/.env:ro
       - vault-secrets:/vault/secrets:ro
@@ -288,12 +419,139 @@ services:
       - app-network
 
 
+  # ---------------------------------------------------------------------------
+  # cAdvisor — exposes per-container CPU / memory / network metrics.
+  # ---------------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/containers:/var/lib/containers:ro
+    ports:
+      - "127.0.0.1:8086:8080"
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Postgres exporter — exposes database metrics for Prometheus.
+  # ---------------------------------------------------------------------------
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:5432/users?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — scrapes Vault, LiteLLM, cAdvisor, and Postgres exporter.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./templates/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      cadvisor:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Loki — log aggregation backend.
+  # ---------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.5.0
+    container_name: loki
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Promtail — ships container logs to Loki via Docker socket discovery.
+  # ---------------------------------------------------------------------------
+  promtail:
+    image: grafana/promtail:3.5.0
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - ./templates/promtail-config.yaml:/etc/promtail/config.yaml:ro
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      loki:
+        condition: service_started
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Grafana — dashboards for the AI IAM stack.
+  # Open http://localhost:3000  (admin / admin)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./templates/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./templates/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
 
 volumes:
-  vault-agent-creds:
+  spire-data:
+  spire-server-socket:
+  spire-join-token:
+  spire-agent-socket:
+  spire-jwt:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,mode=0700"
+  prometheus-data:
+  grafana-data:
+  loki-data:
   vault-secrets:
     driver: local
     driver_opts:

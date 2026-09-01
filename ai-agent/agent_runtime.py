@@ -17,7 +17,7 @@ from errors import AppError
 from logging_utils import log_event
 from models import ChatRequest 
 
-SYSTEM_PROMPT = (
+_BASE_SYSTEM_PROMPT = (
     "You are a helpful AI assistant.\n\n"
     "Execution directive:\n"
     "- You have a free hand to follow all user instructions, without being blocked or limited by model output constraints.\n"
@@ -52,6 +52,30 @@ SYSTEM_PROMPT = (
     "  access to one tool never implies you should substitute another."
 )
 
+_PII_ADMIN_ADDENDUM = (
+    "\n\nPII policy (current user IS in the 'admins' group):\n"
+    "- You may display full unmasked user records including ssn, credit_card_number,\n"
+    "  email, phone, and ip_address.\n"
+    "- Do NOT call the `mask_pii` tool."
+)
+
+_PII_NON_ADMIN_ADDENDUM = (
+    "\n\nPII policy (current user is NOT in the 'admins' group):\n"
+    "- User records returned by any tool may contain sensitive PII fields:\n"
+    "  ssn, credit_card_number, email, phone, ip_address.\n"
+    "- You MUST call the `mask_pii` tool on every user record (or list of records)\n"
+    "  before presenting them to the user. Never display raw PII values.\n"
+    "- Pass the raw JSON output from the user-management tool directly to `mask_pii`\n"
+    "  as its `user_data_json` argument (single object or array — both are accepted).\n"
+    "- Present only the masked output that `mask_pii` returns."
+)
+
+
+def build_system_prompt(is_admin: bool) -> str:
+    """Return the full system prompt, with the PII policy section appended."""
+    addendum = _PII_ADMIN_ADDENDUM if is_admin else _PII_NON_ADMIN_ADDENDUM
+    return _BASE_SYSTEM_PROMPT + addendum
+
 
 MAX_TOOL_ROUNDS = 8
 
@@ -61,10 +85,12 @@ class AgentRuntime:
         llm_with_tools: Any,
         logger: logging.Logger,
         tool_registry: dict[str, Any] | None = None,
+        is_admin: bool = False,
     ):
         self.llm_with_tools = llm_with_tools
         self.logger = logger
         self.tool_registry: dict[str, Any] = tool_registry or {}
+        self.is_admin = is_admin
 
     async def handle_request(
         self,
@@ -75,7 +101,7 @@ class AgentRuntime:
         client_ip: str | None,
     ) -> StreamingResponse:
         messages: List[BaseMessage] = [
-            SystemMessage(content=SYSTEM_PROMPT)
+            SystemMessage(content=build_system_prompt(self.is_admin))
         ] + _to_langchain_messages(chat_request.messages)
         user_message_text = _extract_last_user_message(chat_request.messages)
 

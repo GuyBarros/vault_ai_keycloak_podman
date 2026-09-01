@@ -1,0 +1,99 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+
+scrape_configs:
+
+  # ── Prometheus self-monitoring ──────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ── Vault — full telemetry via sys/metrics ──────────────────────────────────
+  - job_name: vault
+    metrics_path: /v1/sys/metrics
+    params:
+      format: ["prometheus"]
+    bearer_token: root
+    static_configs:
+      - targets: ["vault:8200"]
+    relabel_configs:
+      - target_label: service
+        replacement: vault
+
+  # ── LiteLLM — proxy usage and latency metrics ───────────────────────────────
+  - job_name: litellm
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials: ibm123
+    static_configs:
+      - targets: ["litellm:4000"]
+    relabel_configs:
+      - target_label: service
+        replacement: litellm
+
+  # ── cAdvisor — per-container resource metrics ───────────────────────────────
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    relabel_configs:
+      - target_label: service
+        replacement: cadvisor
+
+  # ── Postgres exporter ───────────────────────────────────────────────────────
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+    relabel_configs:
+      - target_label: service
+        replacement: postgres
+
+  # ── AI Agent (FastAPI + prometheus-fastapi-instrumentator) ──────────────────
+  - job_name: ai-agent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ai-agent:8000"]
+    relabel_configs:
+      - target_label: service
+        replacement: ai-agent
+
+  # ── User MCP (FastAPI wrapper around FastMCP) ───────────────────────────────
+  # user-mcp shares the PID namespace with spire-agent and inherits the bridge
+  # network, so it is not reachable by DNS from app-network. Scrape via the
+  # host-mapped port using Podman's built-in host alias instead.
+  - job_name: user-mcp
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.containers.internal:8090"]
+    relabel_configs:
+      - target_label: service
+        replacement: user-mcp
+
+  # ── Token Exchange (FastAPI) ─────────────────────────────────────────────────
+  - job_name: token-exchange
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["token-exchange:9090"]
+    relabel_configs:
+      - target_label: service
+        replacement: token-exchange
+
+  # ── Keycloak management endpoint (KC 23+) ───────────────────────────────────
+  - job_name: keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["keycloak:9000"]
+    relabel_configs:
+      - target_label: service
+        replacement: keycloak
+
+  # ── SPIRE Server telemetry ───────────────────────────────────────────────────
+  - job_name: spire-server
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["spire-server:9988"]
+    relabel_configs:
+      - target_label: service
+        replacement: spire-server

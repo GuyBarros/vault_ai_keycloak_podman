@@ -6,6 +6,7 @@ from uuid import uuid4
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from api.routes import router
 from config.settings import settings
@@ -28,6 +29,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.middleware("http")

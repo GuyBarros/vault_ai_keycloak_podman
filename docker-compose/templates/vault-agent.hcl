@@ -5,14 +5,16 @@ vault {
   }
 }
 
-# AppRole credentials are written to the shared volume by vault-setup.
+# Authenticate to Vault using a SPIFFE JWT-SVID.
+# vault-agent-start.sh fetches the SVID from the SPIRE Workload API and writes
+# it to /tmp/spire-jwt/svid.jwt; this method reads it from that file.
 auto_auth {
-  method "approle" {
-    mount_path = "auth/approle"
+  method "jwt" {
+    mount_path = "auth/jwt-spiffe"
     config = {
-      role_id_file_path                   = "/vault/creds/role-id"
-      secret_id_file_path                 = "/vault/creds/secret-id"
-      remove_secret_id_file_after_reading = false
+      path                     = "/tmp/spire-jwt/svid.jwt"
+      role                     = "ai-agent-spiffe"
+      remove_jwt_after_reading = false
     }
   }
 }

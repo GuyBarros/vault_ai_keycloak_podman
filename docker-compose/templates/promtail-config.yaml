@@ -1,0 +1,14 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+# Logs are pushed directly to Loki by ai-agent, user-mcp, and token-exchange
+# via their built-in LokiHandler. Promtail is kept running for potential
+# future use but has no active scrape targets.
+scrape_configs: []

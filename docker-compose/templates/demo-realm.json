@@ -419,6 +419,10 @@
 
   "groups": [
     {
+      "name": "admins",
+      "path": "/admins"
+    },
+    {
       "name": "readers",
       "path": "/readers"
     },
@@ -456,7 +460,7 @@
           "temporary": false
         }
       ],
-      "groups": ["readers", "writers"]
+      "groups": ["admins", "readers", "writers"]
     },
     {
       "username": "user",   
