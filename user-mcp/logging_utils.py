@@ -4,8 +4,11 @@ import inspect
 import json
 import logging
 import os
+import queue
 import socket
 import sys
+import threading
+import urllib.request
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from typing import Any
@@ -56,6 +59,12 @@ def configure_logging(log_level: str) -> None:
 
     existing_handler.setFormatter(formatter)
     _ensure_mcp_noise_filter(existing_handler)
+
+    loki_url = os.environ.get("LOKI_URL", "").strip()
+    if loki_url:
+        loki_handler = LokiHandler(loki_url=loki_url, service="user-mcp")
+        loki_handler.setFormatter(formatter)
+        root_logger.addHandler(loki_handler)
 
 
 def _ensure_mcp_noise_filter(handler: logging.Handler) -> None:
@@ -309,3 +318,67 @@ def _apply_identity_message_prefix(payload: dict[str, Any]) -> None:
         identity_parts.append(f"agent={agent_id}")
     if identity_parts:
         payload["message"] = f"{' '.join(identity_parts)} {message}"
+
+
+class LokiHandler(logging.Handler):
+    """Async logging handler that ships JSON log lines to Loki's push API."""
+
+    def __init__(self, loki_url: str, service: str, batch_size: int = 20) -> None:
+        super().__init__()
+        base = loki_url.rstrip("/")
+        if not base.endswith("/loki/api/v1/push"):
+            base = f"{base}/loki/api/v1/push"
+        self._url = base
+        self._service = service
+        self._queue: queue.Queue[tuple[str, str] | None] = queue.Queue(maxsize=1000)
+        self._batch_size = batch_size
+        t = threading.Thread(target=self._worker, daemon=True)
+        t.start()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            ts_ns = str(int(record.created * 1_000_000_000))
+            line = self.format(record)
+            self._queue.put_nowait((ts_ns, line))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _worker(self) -> None:
+        while True:
+            entries: list[tuple[str, str]] = []
+            try:
+                item = self._queue.get(timeout=2)
+                if item is None:
+                    break
+                entries.append(item)
+                while len(entries) < self._batch_size:
+                    try:
+                        more = self._queue.get_nowait()
+                        if more is None:
+                            break
+                        entries.append(more)
+                    except queue.Empty:
+                        break
+            except queue.Empty:
+                continue
+
+            if not entries:
+                continue
+
+            payload = json.dumps({
+                "streams": [{
+                    "stream": {"container": self._service},
+                    "values": [[ts, line] for ts, line in entries],
+                }]
+            }).encode("utf-8")
+
+            try:
+                req = urllib.request.Request(
+                    self._url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                urllib.request.urlopen(req, timeout=3)
+            except Exception:  # noqa: BLE001
+                pass

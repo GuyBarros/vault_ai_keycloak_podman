@@ -276,6 +276,8 @@ services:
       - "8090:8090"
     env_file:
       - ./templates/user-mcp.env
+    environment:
+      LOKI_URL: "http://loki:3100"
     volumes:
       - spire-agent-socket:/tmp/spire-agent:ro
     depends_on:
@@ -288,6 +290,8 @@ services:
       spire-setup:
         condition: service_completed_successfully
       spire-agent:
+        condition: service_started
+      loki:
         condition: service_started
     networks:
       app-network:
@@ -307,11 +311,14 @@ services:
     environment:
       IDENTITY_BROKER_VAULT_ADDR: http://vault:8200
       IDENTITY_BROKER_KEYCLOAK_URL: http://keycloak:8080
+      LOKI_URL: "http://loki:3100"
     depends_on:
       vault:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+      loki:
+        condition: service_started
     networks:
       - app-network
 
@@ -398,10 +405,13 @@ services:
         condition: service_started
       user-mcp:
         condition: service_started
+      loki:
+        condition: service_started
     environment:
       TOKEN_EXCHANGE_URL: "http://token-exchange:9090/v1/identity/obo-token"
       ACTOR_TOKEN_PATH: "/vault/secrets/actor-token"
       USER_MCP_URL: "http://user-mcp:8090/mcp"
+      LOKI_URL: "http://loki:3100"
     volumes:
       - ./templates/ai-agent.env:/app/.env:ro
       - vault-secrets:/vault/secrets:ro
@@ -489,7 +499,6 @@ services:
     image: grafana/promtail:3.5.0
     container_name: promtail
     restart: unless-stopped
-    user: root
     volumes:
       - ./templates/promtail-config.yaml:/etc/promtail/config.yaml:ro
     command: -config.file=/etc/promtail/config.yaml
