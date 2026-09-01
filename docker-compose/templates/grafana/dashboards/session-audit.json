@@ -354,12 +354,12 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\"} | json | event=\"tool_invoked\" | db_username!=\"\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] db_user={{.db_username}} path={{.db_creds_path}} lease={{.lease_id}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"tool_invoked\" | db_username!=\"\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] db_user={{.db_username}} path={{.db_creds_path}} lease={{.lease_id}} ttl={{.lease_duration}}s spiffe_id={{.workload_spiffe_id}} request_id={{.request_id}}\"",
           "legendFormat": ""
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s spiffe_id={{.workload_spiffe_id}} request_id={{.request_id}}\"",
           "legendFormat": ""
         }
       ],
@@ -368,8 +368,32 @@
     },
 
     {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "user-mcp authenticating to Vault with its own SPIFFE JWT-SVID (workload identity) to mint the DB credentials above. Threads the full chain: which user, through which agent, with what scope, resolved to which SPIFFE workload and Vault role.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 45 },
+      "id": 42,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{container=\"user-mcp\"} | json | event=\"vault_login_ok\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] scope={{.auth_scope}} spiffe_id={{.workload_spiffe_id}} vault_role={{.vault_role}} request_id={{.request_id}}\"",
+        "legendFormat": ""
+      }],
+      "title": "SPIFFE Vault Logins (user → agent → workload → role)",
+      "type": "logs"
+    },
+
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
       "id": 50,
       "title": "🔗 Full Request Trace — correlate by request_id",
       "type": "row"
@@ -378,7 +402,7 @@
     {
       "datasource": { "type": "loki", "uid": "loki" },
       "description": "All log lines across ai-agent, token-exchange, and user-mcp for the selected time range. Use the event field to follow a single request_id from agent → OBO exchange → tool call → DB credential. Filter by entering a request_id UUID in the search bar above.",
-      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 46 },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 56 },
       "id": 51,
       "options": {
         "dedupStrategy": "none",
@@ -401,7 +425,7 @@
 
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 60 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 70 },
       "id": 60,
       "title": "📋 Scope × Tool Breakdown",
       "type": "row"
@@ -420,7 +444,7 @@
           { "matcher": { "id": "byName", "options": "Denied" },       "properties": [{ "id": "custom.width", "value": 80 }, { "id": "color", "value": { "mode": "thresholds" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }]}
         ]
       },
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 61 },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 71 },
       "id": 61,
       "options": {
         "cellHeight": "sm",
@@ -464,7 +488,7 @@
           { "matcher": { "id": "byName", "options": "Uses" },        "properties": [{ "id": "custom.width", "value": 70 }]}
         ]
       },
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 61 },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 71 },
       "id": 62,
       "options": {
         "cellHeight": "sm",
@@ -498,7 +522,7 @@
 
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 71 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 81 },
       "id": 70,
       "title": "⚠️ Errors & Denied Requests",
       "type": "row"
@@ -507,7 +531,7 @@
     {
       "datasource": { "type": "loki", "uid": "loki" },
       "description": "All error and warning log lines across the full stack — token exchange failures, JWT validation errors, Vault login rejections, and scope denials.",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 72 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 82 },
       "id": 71,
       "options": {
         "dedupStrategy": "none",

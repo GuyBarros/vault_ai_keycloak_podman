@@ -152,9 +152,7 @@ class JwtAuthMiddleware:
             scope_state = scope.setdefault("state", {})
             scope_state["jwt_claims"] = identity
             scope_state["jwt_token"] = None
-            await self._dispatch_with_context(
-                scope, receive, send, identity, request_id, raw_token=None
-            )
+            await self._dispatch_with_context(scope, receive, send, identity, request_id)
             return
 
         try:
@@ -180,9 +178,7 @@ class JwtAuthMiddleware:
                     message="Accepting unauthenticated MCP discovery request",
                     request_id=request_id,
                 )
-                await self._dispatch_with_context(
-                    scope, receive, send, identity, request_id, raw_token=None
-                )
+                await self._dispatch_with_context(scope, receive, send, identity, request_id)
                 return
 
             log_event(
@@ -202,7 +198,8 @@ class JwtAuthMiddleware:
         scope_state["jwt_claims"] = identity
         scope_state["jwt_token"] = token
         await self._dispatch_with_context(
-            scope, receive, send, identity, request_id, raw_token=token
+            scope, receive, send, identity, request_id,
+            verified_user=identity.get("preferred_username"),
         )
 
     async def _dispatch_with_context(
@@ -212,23 +209,30 @@ class JwtAuthMiddleware:
         send: Send,
         identity: dict[str, Any],
         request_id: str,
-        raw_token: str | None,
+        verified_user: str | None = None,
     ) -> None:
+        """Run the wrapped app with request-scoped log context and identity bound.
+
+        `verified_user` is deliberately NOT derived from `identity` here — it
+        must only ever be a `preferred_username` that came off a signature-
+        and claims-validated Bearer token. The bypass-auth and anonymous-
+        discovery call sites both omit it (leaving it None), so
+        `current_obo_user` (auth/context.py) can be trusted downstream as
+        "a real user was authenticated for this request" — Vault-mode
+        credential issuance depends on that being true.
+        """
         log_token = bind_log_context(
             request_id=request_id,
             preferred_username=identity.get("preferred_username"),
             agent_id=identity.get("agent_id"),
             auth_scope=identity.get("scope"),
         )
-        identity_tokens = bind_request_identity(
-            token=raw_token,
-            scope=identity.get("scope"),
-        )
+        identity_token = bind_request_identity(scope=identity.get("scope"), user=verified_user)
         try:
             wrapped_send = _build_request_id_send(send, request_id)
             await self._app(scope, receive, wrapped_send)
         finally:
-            reset_request_identity(identity_tokens)
+            reset_request_identity(identity_token)
             reset_log_context(log_token)
 
 

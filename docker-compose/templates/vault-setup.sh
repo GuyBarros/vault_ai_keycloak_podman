@@ -120,62 +120,6 @@ vault write auth/jwt-spiffe/role/user-mcp-spiffe-write - <<'EOF'
 }
 EOF
 
-# ── JWT auth backend for user-mcp (Keycloak as the OIDC provider) ────────────
-# Keycloak OIDC discovery for the demo realm.
-vault auth list | grep -q "^jwt-user-mcp/" || \
-  vault auth enable -path=jwt-user-mcp jwt
-
-# Split-horizon setup: Vault fetches JWKS from the internal Docker address
-# (keycloak:8080) but tokens carry iss=http://localhost:8081/realms/demo
-# jwks_url bypasses the oidc_discovery issuer-match check; bound_issuer then
-# enforces the correct public issuer on every inbound token.
-vault write auth/jwt-user-mcp/config \
-  jwks_url="http://keycloak:8080/realms/demo/protocol/openid-connect/certs" \
-  bound_issuer="http://localhost:8081/realms/demo"
-
-# Policies for DB credential access
-vault policy write user-mcp-db-read - <<'EOF'
-path "database/creds/user-mcp-read-role" {
-  capabilities = ["read"]
-}
-EOF
-
-vault policy write user-mcp-db-write - <<'EOF'
-path "database/creds/user-mcp-write-role" {
-  capabilities = ["read"]
-}
-EOF
-
-# JWT roles: bound to the "user-mcp" audience; realm_access.roles glob-matched.
-# ***Keycloak places realm roles at realm_access.roles (array of strings).
-vault write auth/jwt-user-mcp/role/user-mcp-read - <<'EOF'
-{
-  "role_type": "jwt",
-  "user_claim": "preferred_username",
-  "bound_audiences": ["user-mcp"],
-  "bound_claims_type": "glob",
-  "bound_claims": { "groups": "*readers*" },
-  "token_policies": ["user-mcp-db-read"],
-  "token_ttl": 300,
-  "token_max_ttl": 900,
-  "token_type": "service"
-}
-EOF
-
-vault write auth/jwt-user-mcp/role/user-mcp-write - <<'EOF'
-{
-  "role_type": "jwt",
-  "user_claim": "preferred_username",
-  "bound_audiences": ["user-mcp"],
-  "bound_claims_type": "glob",
-  "bound_claims": { "groups": "*writers*" },
-  "token_policies": ["user-mcp-db-write"],
-  "token_ttl": 300,
-  "token_max_ttl": 900,
-  "token_type": "service"
-}
-EOF
-
 # Vault OIDC identity: issuer + role for the ai-agent ──
 vault write identity/oidc/config \
   issuer="http://vault:8200"
@@ -346,25 +290,6 @@ vault write transform/role/user-mcp-transform \
 
 # Policy to allow user-mcp to encode through Transform
 vault policy write user-mcp-transform - <<'EOF'
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
-EOF
-
-# Extend the JWT read/write roles so user-mcp can also call Transform
-vault policy write user-mcp-db-read - <<'EOF'
-path "database/creds/user-mcp-read-role" {
-  capabilities = ["read"]
-}
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
-EOF
-
-vault policy write user-mcp-db-write - <<'EOF'
-path "database/creds/user-mcp-write-role" {
-  capabilities = ["read"]
-}
 path "transform/encode/user-mcp-transform" {
   capabilities = ["create", "update"]
 }
