@@ -75,7 +75,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "count(sum by (preferred_username) (count_over_time({container=\"ai-agent\", event=\"agent_request_started\"} | json | preferred_username=~\"$user\" [$__range])))",
+        "expr": "count(sum by (preferred_username) (count_over_time({container=\"ai-agent\"} | json | event=\"agent_request_started\" | preferred_username=~\"$user\" [$__range])))",
         "legendFormat": "Distinct users"
       }],
       "title": "Distinct Users",
@@ -97,7 +97,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum(count_over_time({container=\"ai-agent\", event=\"agent_request_started\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "expr": "sum(count_over_time({container=\"ai-agent\"} | json | event=\"agent_request_started\" | preferred_username=~\"$user\" [$__range]))",
         "legendFormat": "Requests"
       }],
       "title": "Total Agent Requests",
@@ -119,7 +119,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum(count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "expr": "sum(count_over_time({container=\"ai-agent\"} | json | event=\"scoped_tool_invoke\" | preferred_username=~\"$user\" [$__range]))",
         "legendFormat": "Tool calls"
       }],
       "title": "Total Tool Calls",
@@ -167,7 +167,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum(count_over_time({container=\"ai-agent\", event=\"scoped_tool_token_exchange_failed\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "expr": "sum(count_over_time({container=\"ai-agent\"} | json | event=\"scoped_tool_token_exchange_failed\" | preferred_username=~\"$user\" [$__range]))",
         "legendFormat": "Denied"
       }],
       "title": "Token Exchange Failures",
@@ -190,17 +190,17 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({container=\"ai-agent\", event=\"agent_request_started\"} | json | preferred_username=~\"$user\" [2m]))",
+          "expr": "sum(rate({container=\"ai-agent\"} | json | event=\"agent_request_started\" | preferred_username=~\"$user\" [2m]))",
           "legendFormat": "Requests/s"
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [2m]))",
+          "expr": "sum(rate({container=\"ai-agent\"} | json | event=\"scoped_tool_invoke\" | preferred_username=~\"$user\" [2m]))",
           "legendFormat": "Tool calls/s"
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({container=\"ai-agent\", event=\"scoped_tool_token_exchange_failed\"} | json | preferred_username=~\"$user\" [2m]))",
+          "expr": "sum(rate({container=\"ai-agent\"} | json | event=\"scoped_tool_token_exchange_failed\" | preferred_username=~\"$user\" [2m]))",
           "legendFormat": "Failures/s"
         }
       ],
@@ -223,7 +223,7 @@
       "options": { "tooltip": { "mode": "multi" } },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum by (preferred_username) (count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [2m]))",
+        "expr": "sum by (preferred_username) (count_over_time({container=\"ai-agent\"} | json | event=\"scoped_tool_invoke\" | preferred_username=~\"$user\" [2m]))",
         "legendFormat": "{{preferred_username}}"
       }],
       "title": "Tool Calls by User",
@@ -245,7 +245,7 @@
       "options": { "tooltip": { "mode": "multi" } },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum by (tool) (count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [2m]))",
+        "expr": "sum by (tool) (count_over_time({container=\"ai-agent\"} | json | event=\"scoped_tool_invoke\" | preferred_username=~\"$user\" [2m]))",
         "legendFormat": "{{tool}}"
       }],
       "title": "Tool Calls by Tool Name",
@@ -310,17 +310,17 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] tool={{.tool}} scopes={{.required_scopes}} request_id={{.request_id}}\"",
+          "expr": "{container=\"ai-agent\"} | json | event=\"scoped_tool_invoke\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] tool={{.tool}} scopes={{.required_scopes}} request_id={{.request_id}}\"",
           "legendFormat": ""
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"ai-agent\", event=\"scoped_tool_token_exchange_failed\"} | json | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] DENIED tool={{.tool}} scopes={{.required_scopes}} error={{.error_message}} request_id={{.request_id}}\"",
+          "expr": "{container=\"ai-agent\"} | json | event=\"scoped_tool_token_exchange_failed\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] DENIED tool={{.tool}} scopes={{.required_scopes}} error={{.error_message}} request_id={{.request_id}}\"",
           "legendFormat": ""
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\", event=\"tool_invoked\"} | json | preferred_username=~\"$user\" | line_format \"[user-mcp] tool={{.tool}} scopes={{.required_scopes}} user={{.preferred_username}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"tool_invoked\" | preferred_username=~\"$user\" | line_format \"[user-mcp] tool={{.tool}} scopes={{.required_scopes}} user={{.preferred_username}}\"",
           "legendFormat": ""
         }
       ],
@@ -354,12 +354,12 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\", event=\"db_call\"} | json | db_username!=\"\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] db_user={{.db_username}} path={{.db_creds_path}} lease={{.lease_id}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"tool_invoked\" | db_username!=\"\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] db_user={{.db_username}} path={{.db_creds_path}} lease={{.lease_id}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
           "legendFormat": ""
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\", event=\"vault_db_creds_issued\"} | json | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
           "legendFormat": ""
         }
       ],
@@ -392,7 +392,7 @@
       },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | event=~\"agent_request_started|identity_broker_call|obo_token_exchange_completed|scoped_tool_invoke|scoped_tool_token_exchange_failed|tool_invoked|db_call|vault_db_creds_issued|vault_login_ok\" | preferred_username=~\"$user\"",
+        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | event=~\"agent_request_started|identity_broker_call|obo_token_exchange_completed|scoped_tool_invoke|scoped_tool_token_exchange_failed|tool_invoked|vault_db_creds_issued|vault_login_ok\" | preferred_username=~\"$user\"",
         "legendFormat": ""
       }],
       "title": "Correlated Request Trace (all services)",
@@ -444,7 +444,7 @@
       ],
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum by (preferred_username, tool, required_scopes) (count_over_time({container=\"ai-agent\", event=\"scoped_tool_invoke\"} | json | preferred_username=~\"$user\" [$__range]))",
+        "expr": "sum by (preferred_username, tool, required_scopes) (count_over_time({container=\"ai-agent\"} | json | event=\"scoped_tool_invoke\" | preferred_username=~\"$user\" [$__range]))",
         "legendFormat": "{{preferred_username}} / {{tool}} / {{required_scopes}}",
         "instant": true
       }],
@@ -488,7 +488,7 @@
       ],
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum by (preferred_username, db_username, db_creds_path) (count_over_time({container=\"user-mcp\", event=\"db_call\"} | json | db_username!=\"\" | preferred_username=~\"$user\" [$__range]))",
+        "expr": "sum by (preferred_username, db_username, db_creds_path) (count_over_time({container=\"user-mcp\"} | json | event=\"tool_invoked\" | db_username!=\"\" | preferred_username=~\"$user\" [$__range]))",
         "legendFormat": "{{preferred_username}} / {{db_username}} / {{db_creds_path}}",
         "instant": true
       }],
@@ -521,7 +521,7 @@
       },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\", level=~\"error|warning|warn\"} | json | preferred_username=~\"$user\"",
+        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | level=~\"error|warning|warn\" | preferred_username=~\"$user\"",
         "legendFormat": ""
       }],
       "title": "Error & Warning Log Lines",
