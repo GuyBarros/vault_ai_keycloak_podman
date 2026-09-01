@@ -1,5 +1,5 @@
-# Required variables — all must be non-empty in the shell before running make.
-# They are sourced from setenv via `. ./setenv && make`.
+# Required variables - all must be non-empty in the shell before running make.
+# Source them first:  . ./setenv && make
 REQUIRED_VARS := \
 	WATSONX_PROJECT_ID \
 	WATSONX_API_KEY \
@@ -7,6 +7,9 @@ REQUIRED_VARS := \
 	GENERIC_CLIENT_ID \
 	GENERIC_CLIENT_SECRET \
 	KEYCLOAK_CLIENT_SECRET
+
+all: check-env .env clear build
+	docker compose up -d --force-recreate
 
 # check-env validates that every required variable is set and non-empty.
 # It prints a clear message for each missing variable then exits non-zero.
@@ -30,9 +33,6 @@ check-env:
 # so that variable references in env_file templates are expanded by Compose.
 .env: setenv
 	sed 's/^export //' setenv > .env
-
-all: check-env .env clear build
-	docker compose up -d --force-recreate
 
 clear:
 	docker compose down -v
