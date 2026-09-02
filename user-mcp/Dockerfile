@@ -28,7 +28,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY auth/    ./auth/
 COPY storage/ ./storage/
 COPY tools/   ./tools/
-COPY server.py mcp_app.py config.py errors.py logging_utils.py models.py vault_client.py ./
+COPY server.py mcp_app.py config.py errors.py logging_utils.py models.py vault_client.py spiffe_client.py ./
 # COPY users_repository.json ./
 
 ENV VIRTUAL_ENV=/app/.venv \
@@ -37,6 +37,15 @@ ENV VIRTUAL_ENV=/app/.venv \
     PYTHONDONTWRITEBYTECODE=1 \
     UVICORN_HOST=0.0.0.0 \
     UVICORN_PORT=8090
+
+# Run as uid 1000, matching the "unix:uid:1000" selector on this workload's
+# SPIRE registration entry (docker-compose/templates/spire/spire-setup.sh) —
+# as root, SPIRE's Workload API would attest this process against the
+# "unix:uid:0" selector instead and hand back the ai-agent/vault-agent SPIFFE
+# identity rather than user-mcp's own.
+RUN useradd --uid 1000 --no-create-home --shell /usr/sbin/nologin user-mcp \
+    && chown -R user-mcp:user-mcp /app
+USER 1000
 
 EXPOSE 8090
 

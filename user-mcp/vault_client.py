@@ -22,9 +22,12 @@ class DynamicDbCredentials:
 class VaultClient:
     """Thin async Vault client for the JWT login + database creds flow.
 
-    Authenticates to Vault with the OBO JWT to obtain a short-lived Vault
-    client token, then reads dynamic Postgres credentials from the
-    database secrets engine using that token.
+    Authenticates to Vault with a SPIFFE JWT-SVID (this workload's own
+    identity, fetched from the local SPIRE Workload API — see
+    spiffe_client.py) to obtain a short-lived Vault client token, then reads
+    dynamic Postgres credentials from the database secrets engine using that
+    token. Which Vault role to request (read vs. write) is still selected by
+    the caller from the human user's validated OIDC scope.
     """
 
     def __init__(
@@ -87,9 +90,9 @@ class VaultClient:
         log_event(
             LOGGER,
             "vault_login_ok",
-            level=logging.DEBUG,
+            level=logging.INFO,
             message="Vault JWT login succeeded",
-            role=role,
+            vault_role=role,
             jwt_path=self._jwt_path,
         )
         return client_token
@@ -164,7 +167,7 @@ class VaultClient:
         log_event(
             LOGGER,
             "vault_db_creds_issued",
-            level=logging.DEBUG,
+            level=logging.INFO,
             message="Vault issued dynamic DB credentials",
             creds_path=path,
             lease_duration=body.get("lease_duration"),

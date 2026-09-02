@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from auth.context import current_obo_scope, current_obo_token
+from auth.context import current_obo_scope
 from errors import AppError
 
 

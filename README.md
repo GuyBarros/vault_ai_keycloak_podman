@@ -1,3 +1,6 @@
+note: AI Companions have been used in the development of this demo.
+
+
 ## CPU architecture (ARM vs Intel)
 
 The stack must run as **one** CPU architecture so Mac Apple Silicon, Intel Macs, and Windows/Linux PCs pull and build matching images. Set `DEMO_ARCH` in `docker-compose/setenv` (or on the `make` command line). If you leave it empty, `make` auto-detects from `uname -m`.
