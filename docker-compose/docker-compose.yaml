@@ -196,6 +196,8 @@ services:
     image: ghcr.io/spiffe/spire-server:1.11.1
     container_name: spire-server
     hostname: spire-server
+    # Named volume is root-owned; image defaults to uid 1000 and cannot mkdir data_dir.
+    user: "0:0"
     command:
       - -config
       - /etc/spire/server/server.conf
@@ -251,6 +253,8 @@ services:
     image: hashicorp/vault:2.0.4
     container_name: spire-setup
     restart: "no"
+    # Socket dir is 0700 root (SPIRE umask 0027); vault image user cannot dial it.
+    user: "0:0"
     entrypoint: /bin/sh
     command: /spire-setup/spire-setup.sh
     volumes:
