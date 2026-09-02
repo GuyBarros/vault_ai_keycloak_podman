@@ -5,3 +5,10 @@ export LITELLM_MASTER_KEY=ibm123
 export GENERIC_CLIENT_ID=
 export GENERIC_CLIENT_SECRET=
 export KEYCLOAK_CLIENT_SECRET=
+
+# CPU architecture for every container and for SPIRE binaries downloaded at boot.
+#   arm    — Apple Silicon (M1/M2/M3/M4) and ARM servers  → linux/arm64
+#   intel  — Intel/AMD PCs and Intel Macs                 → linux/amd64
+# Leave empty to auto-detect from the host (`uname -m`). Override on the make
+# command line without editing this file:  DEMO_ARCH=intel make
+export DEMO_ARCH=

@@ -1,6 +1,10 @@
+x-cpu: &cpu
+  platform: "${DOCKER_PLATFORM:?Set DOCKER_PLATFORM via setenv and make}"
+
 services:
 
   litellm:
+    <<: *cpu
     image: docker.litellm.ai/berriai/litellm:main-latest
     container_name: litellm
     ports:
@@ -46,6 +50,7 @@ services:
       - app-network
 
   postgres:
+    <<: *cpu
     image: postgres:16
     container_name: postgres
     ports:
@@ -63,6 +68,7 @@ services:
       - app-network
 
   vault:
+    <<: *cpu
     image: hashicorp/vault-enterprise:2.0.4-ent
     container_name: vault
     ports:
@@ -86,6 +92,7 @@ services:
           - vault
 
   db-setup:
+    <<: *cpu
     image: postgres:16
     container_name: db-setup
     restart: "no"
@@ -110,6 +117,7 @@ services:
       - app-network
 
   vault-setup:
+    <<: *cpu
     image: hashicorp/vault:2.0.4
     container_name: vault-setup
     restart: "no"
@@ -138,6 +146,7 @@ services:
 
 
   keycloak:
+    <<: *cpu
     image: quay.io/keycloak/keycloak:26.7
     container_name: keycloak
     ports:
@@ -175,6 +184,7 @@ services:
   # token; the proxy strips SPIRE-specific fields that break Vault's parser.
   # ---------------------------------------------------------------------------
   jwks-proxy:
+    <<: *cpu
     image: user-mcp:local
     container_name: jwks-proxy
     restart: unless-stopped
@@ -193,6 +203,7 @@ services:
   # SPIRE Server — issues SVIDs for workloads registered in this trust domain.
   # ---------------------------------------------------------------------------
   spire-server:
+    <<: *cpu
     image: ghcr.io/spiffe/spire-server:1.11.1
     container_name: spire-server
     hostname: spire-server
@@ -223,6 +234,7 @@ services:
   # Shares the socket volume with user-mcp.
   # ---------------------------------------------------------------------------
   spire-agent:
+    <<: *cpu
     # Use the same Alpine-based vault image so we have /bin/sh to read the
     # join-token file.  The spire-agent binary is downloaded at startup.
     image: hashicorp/vault:2.0.4
@@ -231,6 +243,8 @@ services:
     user: root
     entrypoint: /bin/sh
     command: /spire-agent/spire-agent-start.sh
+    environment:
+      SPIRE_ARCH: "${SPIRE_ARCH:?Set SPIRE_ARCH via setenv and make}"
     volumes:
       - ./templates/spire/agent.conf:/etc/spire/agent/agent.conf:ro
       - ./templates/spire/spire-agent-start.sh:/spire-agent/spire-agent-start.sh:ro
@@ -250,6 +264,7 @@ services:
   # spire-server CLI via the admin socket on the shared volume.
   # ---------------------------------------------------------------------------
   spire-setup:
+    <<: *cpu
     image: hashicorp/vault:2.0.4
     container_name: spire-setup
     restart: "no"
@@ -257,6 +272,8 @@ services:
     user: "0:0"
     entrypoint: /bin/sh
     command: /spire-setup/spire-setup.sh
+    environment:
+      SPIRE_ARCH: "${SPIRE_ARCH:?Set SPIRE_ARCH via setenv and make}"
     volumes:
       - ./templates/spire/spire-setup.sh:/spire-setup/spire-setup.sh:ro
       - spire-server-socket:/tmp/spire-server
@@ -268,6 +285,7 @@ services:
       - app-network
 
   user-mcp:
+    <<: *cpu
     build:
       context: ../user-mcp
       dockerfile: Dockerfile
@@ -303,6 +321,7 @@ services:
           - user-mcp
 
   token-exchange:
+    <<: *cpu
     build:
       context: ../token-exchange
       dockerfile: Dockerfile
@@ -327,6 +346,7 @@ services:
       - app-network
 
   web:
+    <<: *cpu
     build:
       context: ../web-app
       dockerfile: Dockerfile
@@ -361,6 +381,7 @@ services:
   # and writes it to the shared in-memory volume so ai-agent can read it.
   # ---------------------------------------------------------------------------
   vault-agent:
+    <<: *cpu
     image: hashicorp/vault:2.0.4
     container_name: vault-agent
     restart: unless-stopped
@@ -377,6 +398,7 @@ services:
         condition: service_started
     environment:
       VAULT_ADDR: http://vault:8200
+      SPIRE_ARCH: "${SPIRE_ARCH:?Set SPIRE_ARCH via setenv and make}"
     entrypoint:
       - /bin/sh
       - /vault/config/vault-agent-start.sh
@@ -393,6 +415,7 @@ services:
       - app-network
 
   ai-agent:
+    <<: *cpu
     build:
       context: ../ai-agent
       dockerfile: Dockerfile
@@ -427,6 +450,7 @@ services:
   # cAdvisor — exposes per-container CPU / memory / network metrics.
   # ---------------------------------------------------------------------------
   cadvisor:
+    <<: *cpu
     image: gcr.io/cadvisor/cadvisor:v0.51.0
     container_name: cadvisor
     restart: unless-stopped
@@ -445,6 +469,7 @@ services:
   # Postgres exporter — exposes database metrics for Prometheus.
   # ---------------------------------------------------------------------------
   postgres-exporter:
+    <<: *cpu
     image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
     container_name: postgres-exporter
     restart: unless-stopped
@@ -460,6 +485,7 @@ services:
   # Prometheus — scrapes Vault, LiteLLM, cAdvisor, and Postgres exporter.
   # ---------------------------------------------------------------------------
   prometheus:
+    <<: *cpu
     image: prom/prometheus:v3.5.0
     container_name: prometheus
     restart: unless-stopped
@@ -485,6 +511,7 @@ services:
   # Loki — log aggregation backend.
   # ---------------------------------------------------------------------------
   loki:
+    <<: *cpu
     image: grafana/loki:3.5.0
     container_name: loki
     restart: unless-stopped
@@ -500,6 +527,7 @@ services:
   # Promtail — ships container logs to Loki via Docker socket discovery.
   # ---------------------------------------------------------------------------
   promtail:
+    <<: *cpu
     image: grafana/promtail:3.5.0
     container_name: promtail
     restart: unless-stopped
@@ -517,6 +545,7 @@ services:
   # Open http://localhost:3000  (admin / admin)
   # ---------------------------------------------------------------------------
   grafana:
+    <<: *cpu
     image: grafana/grafana:11.6.1
     container_name: grafana
     restart: unless-stopped
