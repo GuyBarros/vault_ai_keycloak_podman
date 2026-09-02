@@ -141,7 +141,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "sum(count_over_time({container=\"user-mcp\", event=\"db_call\"} | json | db_username!=\"\" [$__range]))",
+        "expr": "sum(count_over_time({container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" [$__range]))",
         "legendFormat": "DB cred uses"
       }],
       "title": "Dynamic DB Cred Uses",
