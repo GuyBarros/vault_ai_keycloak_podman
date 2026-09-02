@@ -44,3 +44,4 @@ terraform.rc
 # planout
 *setenv
 *.hclic
+docker-compose/.env
