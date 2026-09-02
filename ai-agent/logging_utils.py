@@ -262,8 +262,8 @@ def log_event(
 
 
 def _apply_identity_message_prefix(payload: dict[str, Any]) -> None:
-    preferred_username = payload.pop("preferred_username", None)
-    actor_agent_id = payload.pop("actor_agent_id", None)
+    preferred_username = payload.get("preferred_username")
+    actor_agent_id = payload.get("actor_agent_id")
     message = payload.get("message")
     if not isinstance(message, str):
         return
