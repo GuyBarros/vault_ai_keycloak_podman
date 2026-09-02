@@ -355,7 +355,7 @@ services:
     ports:
       - "8080:8080"
     environment:     
-      NEXT_PUBLIC_CUSTOM_AUDIENCE: "IAM"
+      NEXT_PUBLIC_CUSTOM_AUDIENCE: "${CUSTOMER_NAME}"
       AI_AGENT_API_URL: "http://ai-agent:8000"
       COOKIE_SECURE: "false"
     env_file:
