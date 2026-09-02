@@ -172,6 +172,9 @@ path "identity/oidc/token/agent-role" {
 path "litellm/data/config" {
   capabilities = ["read"]
 }
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
 EOF
 
 vault write auth/jwt-spiffe/role/ai-agent-spiffe - <<'EOF'

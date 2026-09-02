@@ -8,7 +8,7 @@ Keep you replies extremely concise and focus on conveying the key information. N
 
 Python-based **identity broker** that:
 1. Exchanges a HashiCorp Vault token for a Vault-signed OIDC Identity JWT.
-2. Performs an **IBM Verify on-behalf-of (OBO) token exchange** — takes a `subject_token` + `actor_token` (Vault Identity JWT) and returns an IBM Verify access token on behalf of the subject.
+2. Performs a **Keycloak on-behalf-of (OBO) token exchange** — takes a `subject_token` + `actor_token` (Vault Identity JWT) and returns a Keycloak access token on behalf of the subject.
 
 Exposes both flows as a FastAPI REST service with in-memory TTL caching.
 
@@ -17,7 +17,7 @@ Exposes both flows as a FastAPI REST service with in-memory TTL caching.
 ```
 Client → FastAPI Service (api/)
            ├── POST /v1/identity/token    → VaultIdentityBroker (broker/) → HashiCorp Vault
-           └── POST /v1/identity/obo-token → OBOBroker (verify/)          → IBM Verify
+           └── POST /v1/identity/obo-token → OBOBroker (verify/)          → Keycloak
 ```
 
 Both library layers (`broker/`, `verify/`) are decoupled from the API layer and independently usable.
@@ -34,7 +34,7 @@ Both library layers (`broker/`, `verify/`) are decoupled from the API layer and 
 │   ├── cache.py        # TTLCache wrapper with JWT expiry validation
 │   └── vault_client.py # hvac.Client wrapper
 ├── verify/
-│   ├── verify_client.py # IBMVerifyClient — HTTP POST to IBM Verify token endpoint
+│   ├── verify_client.py # IBMVerifyClient — HTTP POST to Keycloak token endpoint
 │   └── obo_broker.py    # OBOBroker class (public: exchange_obo_token)
 ├── models/
 │   └── schemas.py      # Pydantic models: TokenRequest/Response, OBOTokenRequest/Response
@@ -68,7 +68,7 @@ Always set `client.token = vault_token` per-request. Token exchange uses:
 client.secrets.identity.generate_signed_id_token(name=role_name)
 ```
 
-### IBM Verify OBO Integration
+### Keycloak OBO Integration
 HTTP POST to `<VERIFY_BASE_URL>/oauth2/token` with form-encoded body:
 ```
 client_id, grant_type=urn:ietf:params:oauth:grant-type:token-exchange,
@@ -86,10 +86,10 @@ Config via env: `IDENTITY_BROKER_VERIFY_BASE_URL`, `IDENTITY_BROKER_OBO_CLIENT_I
 | Vault unavailable | 503 |
 | `VerifyAuthenticationError` | 401 |
 | `VerifyTokenExchangeError` | 500 |
-| IBM Verify unavailable | 503 |
+| Keycloak unavailable | 503 |
 
 ### Retry Policy
-Use `tenacity` for network/5xx failures on both Vault and IBM Verify: `max_attempts=3`, exponential backoff.
+Use `tenacity` for network/5xx failures on both Vault and Keycloak: `max_attempts=3`, exponential backoff.
 
 ### Logging
 Use `structlog` with structured JSON. **Never log `vault_token`, `subject_token`, `actor_token`, JWT values, or raw API responses.** Always include `cache_hit` and `duration_ms` in token exchange logs.
@@ -99,7 +99,7 @@ Use `structlog` with structured JSON. **Never log `vault_token`, `subject_token`
 |---|---|
 | API | FastAPI + Uvicorn |
 | Vault SDK | hvac |
-| HTTP client (IBM Verify) | requests |
+| HTTP client (Keycloak) | requests |
 | Cache | cachetools.TTLCache |
 | JWT | PyJWT |
 | Retry | tenacity |

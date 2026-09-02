@@ -168,3 +168,49 @@ async def mask_user_records(
         return_exceptions=False,
     )
     return list(masked)
+
+
+class TransformMasker:
+    """Masks UserRecord tool results via Vault Transform using this workload's SPIFFE identity."""
+
+    def __init__(
+        self,
+        vault: VaultClient,
+        spiffe,
+        jwt_role: str,
+        transform_role: str,
+    ):
+        self._vault = vault
+        self._spiffe = spiffe
+        self._jwt_role = jwt_role
+        self._transform_role = transform_role
+
+    async def mask_result(self, result):
+        """Mask a UserRecord or list[UserRecord]; other values pass through."""
+        svid = await self._spiffe.get_jwt_svid()
+        client_token = await self._vault.login_with_jwt(svid.token, self._jwt_role)
+        if isinstance(result, list) and result and isinstance(result[0], UserRecord):
+            masked = await mask_user_records(
+                result, self._vault, client_token, self._transform_role
+            )
+            log_event(
+                LOGGER,
+                "pii_masked",
+                message=f"Vault Transform masked {len(masked)} user record(s)",
+                record_count=len(masked),
+                transform_role=self._transform_role,
+            )
+            return masked
+        if isinstance(result, UserRecord):
+            masked = await mask_user_record(
+                result, self._vault, client_token, self._transform_role
+            )
+            log_event(
+                LOGGER,
+                "pii_masked",
+                message="Vault Transform masked 1 user record",
+                record_count=1,
+                transform_role=self._transform_role,
+            )
+            return masked
+        return result

@@ -23,6 +23,7 @@ from logging_utils import (
 )
 from mcp_client import extract_required_scopes, fetch_mcp_tools
 from models import AgentTokensResponse, ChatRequest
+from opa_client import OpaClient
 from pii_masking import make_mask_pii_tool
 from scoped_tool import make_scoped_tool
 from security import (
@@ -155,18 +156,18 @@ def _wrap_mcp_tools_with_per_call_obo(
     return wrapped
 
 
-def _read_vault_token_for_transform(token_service: OboTokenService) -> str:
-    """Return the agent's actor token to use as the Vault token for Transform calls.
+def _read_vault_token_for_transform(settings: Settings) -> str:
+    """Return the Vault client token rendered by vault-agent for Transform calls.
 
-    The actor token is a Vault token that the agent already has on disk; it is
-    the appropriate credential for reaching the Transform secrets engine from
-    within the agent process.  If it is unavailable the masking tool will fall
-    back to local star-masking for every field.
+    This is the SPIFFE-authenticated Vault token (not the OIDC actor JWT).
+    If the file is missing the masking tool falls back to local star-masking.
     """
+    path = settings.vault_token_path
     try:
-        return token_service.read_actor_token()
-    except AppError:
+        token = path.read_text(encoding="utf-8").strip()
+    except OSError:
         return ""
+    return token
 
 
 def _load_startup_agent_id(token_service: OboTokenService) -> str | None:
@@ -217,6 +218,9 @@ def create_app(
         logger=LOGGER,
     )
     app.state.actor_agent_id = _load_startup_agent_id(app.state.token_service)
+    app.state.opa_client = (
+        OpaClient(active_settings.opa_url) if active_settings.opa_url else None
+    )
 
     @app.middleware("http")
     async def request_logging_middleware(request: Request, call_next):
@@ -319,10 +323,9 @@ def create_app(
                 user_mcp_url=request.app.state.settings.user_mcp_url,
                 bypass=request.app.state.settings.bypass_auth_token_exchange,
             )
-            # Build the mask_pii tool.  The Vault token is the agent's own
-            # actor token so it can reach the Transform secrets engine without
-            # requiring a per-user OBO for this internal operation.
-            vault_token = _read_vault_token_for_transform(request.app.state.token_service)
+            # Build the mask_pii tool.  The Vault token is the SPIFFE-issued
+            # client token from vault-agent (not the OIDC actor JWT).
+            vault_token = _read_vault_token_for_transform(request.app.state.settings)
             mask_pii_tool = make_mask_pii_tool(
                 vault_transform_url=request.app.state.settings.vault_transform_url,
                 vault_token=vault_token,
@@ -337,6 +340,7 @@ def create_app(
             request_path=request.url.path,
             request_method=request.method,
             client_ip=request.state.client_ip,
+            opa_client=request.app.state.opa_client,
         )
 
     @app.get("/v1/agent/tokens", response_model=AgentTokensResponse)

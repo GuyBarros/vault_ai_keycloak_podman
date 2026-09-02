@@ -17,6 +17,14 @@ auto_auth {
       remove_jwt_after_reading = false
     }
   }
+
+  # Persist the SPIFFE-authenticated Vault client token so ai-agent can call
+  # Transform encode. Distinct from the OIDC actor JWT rendered below.
+  sink "file" {
+    config = {
+      path = "/vault/secrets/vault-token"
+    }
+  }
 }
 
 # Render the OIDC actor token to the shared in-memory volume.

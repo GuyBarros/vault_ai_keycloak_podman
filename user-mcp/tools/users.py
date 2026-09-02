@@ -5,6 +5,7 @@ import logging
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from auth.context import caller_is_admin
 from auth.scope_check import get_required_scopes, register_tool_scopes, require_scopes
 from errors import AppError
 from logging_utils import log_event
@@ -30,7 +31,7 @@ def _meta_for(tool_name: str) -> dict[str, list[str]]:
     return {"required_scopes": list(TOOL_SCOPE_REQUIREMENTS[tool_name])}
 
 
-def register_tools(mcp: FastMCP, repo: UserRepository) -> None:
+def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
     """Attach the user-management tools to the given FastMCP server.
 
     Tools are async closures over `repo`. AppError raised by the repository
@@ -73,6 +74,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository) -> None:
             "list_all_users",
             lambda: repo.list_all(),
             result_summary=lambda result: {"count": len(result)},
+            masker=masker,
         )
 
     @mcp.tool(
@@ -91,6 +93,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository) -> None:
                 "count": len(result),
                 "first_name": first_name,
             },
+            masker=masker,
         )
 
     @mcp.tool(
@@ -106,6 +109,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository) -> None:
             "create_user",
             lambda: repo.create(user),
             result_summary=lambda result: {"email": result.email},
+            masker=masker,
         )
 
     @mcp.tool(
@@ -121,6 +125,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository) -> None:
             "delete_user_by_email",
             lambda: repo.delete_by_email(email),
             result_summary=lambda result: {"email": result.email},
+            masker=masker,
         )
 
     @mcp.tool(
@@ -136,13 +141,16 @@ def register_tools(mcp: FastMCP, repo: UserRepository) -> None:
             "update_user_by_email",
             lambda: repo.update_by_email(email, user),
             result_summary=lambda result: {"email": result.email},
+            masker=masker,
         )
 
 
-async def _run_tool(tool_name, action, result_summary):
+async def _run_tool(tool_name, action, result_summary, masker=None):
     try:
         require_scopes(tool_name)
         result = await action()
+        if masker is not None and not caller_is_admin():
+            result = await masker.mask_result(result)
     except AppError as exc:
         log_event(
             LOGGER,

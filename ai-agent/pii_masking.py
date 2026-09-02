@@ -76,6 +76,24 @@ def _normalize_cc(value: str) -> str:
     return re.sub(r"\D", "", value)
 
 
+def _already_masked(value: str) -> bool:
+    """Skip Vault when MCP (or a prior pass) already star-masked the field."""
+    return "*" in value
+
+
+def _vault_ready_value(field: str, raw: str) -> str | None:
+    """Return a Transform-eligible value, or None to skip the Vault call."""
+    if _already_masked(raw):
+        return None
+    if field == "credit_card_number":
+        digits = _normalize_cc(raw)
+        return digits if 13 <= len(digits) <= 19 else None
+    if field == "ssn":
+        digits = re.sub(r"\D", "", raw)
+        return raw if len(digits) == 9 else None
+    return raw or None
+
+
 # ---------------------------------------------------------------------------
 # Vault Transform helper
 # ---------------------------------------------------------------------------
@@ -119,9 +137,9 @@ async def _mask_record(
         raw = result.get(field)
         if raw is None:
             continue
-        value = str(raw)
-        if field == "credit_card_number":
-            value = _normalize_cc(value)
+        value = _vault_ready_value(field, str(raw))
+        if value is None:
+            continue
         try:
             masked = await _vault_encode(
                 vault_transform_url=vault_transform_url,

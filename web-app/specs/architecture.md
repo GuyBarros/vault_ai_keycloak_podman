@@ -2,7 +2,7 @@
 
 ## Goal
 
-Recreate the Streamlit `web-app/` (Python, IBM Verify OAuth, AI agent chat) in Next.js + IBM Carbon, with the visual design from `specs/design/` and identical functional behavior. The new app reuses the same `.env` contract and runs on port `8080`.
+Recreate the Streamlit `web-app/` (Python, Keycloak OAuth, AI agent chat) in Next.js + IBM Carbon, with the visual design from `specs/design/` and identical functional behavior. The new app reuses the same `.env` contract and runs on port `8080`.
 
 ## High-level shape
 
@@ -24,7 +24,7 @@ Recreate the Streamlit `web-app/` (Python, IBM Verify OAuth, AI agent chat) in N
             └─────┬───────────────┬─────┘
                   │               │
         ┌─────────▼───┐    ┌──────▼─────────┐
-        │ IBM Verify  │    │  AI Agent API  │
+        │ Keycloak    │    │  AI Agent API  │
         │  /authorize │    │  /v1/agent/    │
         │  /token     │    │     query      │
         │  /jwks      │    │     tokens     │
@@ -93,7 +93,7 @@ ChatWorkspace.handleSend()
 | Boundary | What crosses | Protection |
 |---|---|---|
 | Browser ↔ Next.js | HTTP requests, sealed cookies | HttpOnly + Secure (prod) + SameSite=Lax cookies; same-origin check on POST |
-| Next.js ↔ IBM Verify | OAuth flows + JWKS | TLS; client_secret in token request body; PKCE S256 |
+| Next.js ↔ Keycloak | OAuth flows + JWKS | TLS; client_secret in token request body; PKCE S256 |
 | Next.js ↔ AI Agent API | Bearer access_token | TLS; token never reaches browser; X-Request-ID propagated |
 
 ## State stores
@@ -118,4 +118,4 @@ ChatWorkspace.handleSend()
 
 ## Coexistence with `web-app/`
 
-The Streamlit app and this Next.js app share the IBM Verify config and (optionally) the AI agent backend. They both bind port 8080 by default; stop one before running the other locally. They do not share cookies (cookie names are scoped to this app).
+The Streamlit app and this Next.js app share the Keycloak config and (optionally) the AI agent backend. They both bind port 8080 by default; stop one before running the other locally. They do not share cookies (cookie names are scoped to this app).

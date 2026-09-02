@@ -110,4 +110,4 @@ Convention: `getLogger('<area>.<module>')` returns a child of the root with `log
 - Pin the `LOG_LEVEL` to `info` or higher in production; `debug` and `trace` emit per-request bookkeeping.
 - The pino output is a single line of JSON; do not pipe through `pino-pretty` in production.
 - If running behind a proxy that strips `x-forwarded-for`, set `client_ip` extraction header(s) accordingly in `lib/log/context.ts`.
-- The `request_id` field is the first thing to grep when correlating across the browser, Next.js, IBM Verify, and the agent backend. Surface it in the UI's error toasts in a future iteration.
+- The `request_id` field is the first thing to grep when correlating across the browser, Next.js, Keycloak, and the agent backend. Surface it in the UI's error toasts in a future iteration.
