@@ -19,10 +19,10 @@ REFRESH_INTERVAL=240
 # ---------------------------------------------------------------------------
 if [ ! -x "$SPIRE_AGENT_BIN" ]; then
   echo "vault-agent-start: downloading spire-agent binary v${SPIRE_VERSION}..."
-  ARCH=$(uname -m)
+  ARCH=${SPIRE_ARCH:-$(uname -m)}
   case "$ARCH" in
-    x86_64)  ARCH=x86_64 ;;
-    aarch64|arm64) ARCH=arm64 ;;
+    x86_64|amd64)  ARCH=x86_64 ;;
+    aarch64|arm64|arm) ARCH=arm64 ;;
     *) echo "unsupported arch: $ARCH"; exit 1 ;;
   esac
   wget -qO /tmp/spire.tar.gz \
