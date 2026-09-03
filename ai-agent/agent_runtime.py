@@ -99,12 +99,15 @@ class AgentRuntime:
         request_path: str,
         request_method: str,
         client_ip: str | None,
+        opa_client: Any = None,
     ) -> StreamingResponse:
         messages: List[BaseMessage] = [
             SystemMessage(content=build_system_prompt(self.is_admin))
         ] + _to_langchain_messages(chat_request.messages)
         user_message_text = _extract_last_user_message(chat_request.messages)
 
+        if opa_client is not None:
+            await opa_client.deny_if_unsafe_prompt(user_message_text)
 
         log_event(
             self.logger,
@@ -149,6 +152,8 @@ class AgentRuntime:
             )
 
         response_text = _extract_text(getattr(assistant_response, "content", ""))
+        if opa_client is not None and not self.is_admin:
+            response_text = await opa_client.sanitize_response(response_text)
         log_event(
             self.logger,
             "response_sent",

@@ -22,7 +22,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: 'AI Runtime Security',
-  description: 'Governed conversations for your AI runtime, powered by IBM Verify.',
+  description: 'Governed conversations for your AI runtime, powered by Keycloak, Vault and LiteLLM.',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

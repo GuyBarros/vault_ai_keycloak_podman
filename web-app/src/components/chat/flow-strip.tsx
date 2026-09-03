@@ -16,10 +16,11 @@ const TOOL_Y = 280;
 const ARC_DIP = 60;
 
 const NODES: NodeDef[] = [
+  { key: 'llm', x: 70, y: AGENT_Y, label: ['LiteLLM', '(model)'], color: '#8a3ffc' },
   { key: 'agent', x: 420, y: AGENT_Y, label: ['AI Agent'], color: '#009d9a' },
   { key: 'user', x: 70, y: HUB_Y, label: ['User'], color: '#0f62fe' },
   { key: 'webapp', x: 245, y: HUB_Y, label: ['Web App'], color: '#33b1ff' },
-  { key: 'policy', x: 420, y: HUB_Y, label: ['AI Gateway', '(LiteLLM)'], color: '#8a3ffc' },
+  { key: 'policy', x: 420, y: HUB_Y, label: ['OPA', '(policy)'], color: '#8a3ffc' },
   { key: 'obo', x: 770, y: HUB_Y, label: ['token-exchange', '(OBO)'], color: '#ee5396' },
   { key: 'verify', x: 1080, y: HUB_Y, label: ['Keycloak'], color: '#da1e28' },
   { key: 'mcp', x: 770, y: TOOL_Y, label: ['user-mcp'], color: '#198038' },
@@ -67,6 +68,7 @@ const STATIC_EDGES: Edge[] = [
   { d: lineSegment('user', 'webapp'), arrowEnd: true },
   { d: lineSegment('webapp', 'policy'), arrowEnd: true },
   { d: lineSegment('policy', 'obo'), arrowEnd: true },
+  { d: lineSegment('llm', 'agent'), arrowEnd: true },
   { d: lineSegment('obo', 'verify'), arrowEnd: true },
 
   { d: verticalOffset('policy', 'agent', -7), arrowEnd: true },
@@ -122,7 +124,7 @@ const POLICY_AGENT_SLOWDOWN = 3;
 const SEGMENT_LABELS = [
   'subject_token + prompt', // user → webapp
   'subject_token + prompt', // webapp → policy
-  'subject_token + verified prompt', // policy → agent
+  'OPA-checked prompt', // policy → agent
   'subject_token + actor_token + scopes', // agent → policy
   'subject_token + actor_token + scopes', // policy → obo
   'subject_token + actor_token + scopes', // obo → verify

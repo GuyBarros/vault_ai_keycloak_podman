@@ -32,7 +32,7 @@ LangChain is responsible for:
 
 ### Supported Endpoint
 
-- `POST /chat`
+- `POST /v1/agent/query`
 
 This endpoint accepts the conversation payload and returns a streaming plain-text response.
 
@@ -202,7 +202,7 @@ The runtime must also log that the actor token file path was used, that the OBO 
 
 ## High-Level Processing Flow
 
-1. Receive `POST /chat` request with message history.
+1. Receive `POST /v1/agent/query` request with message history.
 2. Inspect the latest user message.
 3. Prepare LangChain messages and tools.
 4. Read `actor_token` from the configured file path.

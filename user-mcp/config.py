@@ -162,5 +162,7 @@ def load_settings() -> Settings:
         verify_jwks_url=settings.effective_jwks_url or None,
         bypass_auth=settings.bypass_auth,
         allow_unauth_discovery=settings.allow_unauth_discovery,
+        transform_enabled=settings.transform_enabled,
+        transform_role=settings.transform_role or None,
     )
     return settings

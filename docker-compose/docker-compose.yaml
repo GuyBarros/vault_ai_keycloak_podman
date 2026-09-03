@@ -320,6 +320,28 @@ services:
         aliases:
           - user-mcp
 
+  opa:
+    <<: *cpu
+    image: openpolicyagent/opa:latest
+    container_name: opa
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /policies
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./templates/opa_policies:/policies:ro
+    healthcheck:
+      test: ["CMD", "/opa", "eval", "true"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - app-network
+
   token-exchange:
     <<: *cpu
     build:
@@ -434,11 +456,17 @@ services:
         condition: service_started
       loki:
         condition: service_started
+      opa:
+        condition: service_healthy
     environment:
       TOKEN_EXCHANGE_URL: "http://token-exchange:9090/v1/identity/obo-token"
       ACTOR_TOKEN_PATH: "/vault/secrets/actor-token"
       USER_MCP_URL: "http://user-mcp:8090/mcp"
       LOKI_URL: "http://loki:3100"
+      VAULT_TRANSFORM_URL: "http://vault:8200/v1/transform"
+      VAULT_TRANSFORM_ROLE: "user-mcp-transform"
+      VAULT_TOKEN_PATH: "/vault/secrets/vault-token"
+      OPA_URL: "http://opa:8181"
     volumes:
       - ./templates/ai-agent.env:/app/.env:ro
       - vault-secrets:/vault/secrets:ro

@@ -19,14 +19,34 @@ current_obo_user: ContextVar[Optional[str]] = ContextVar(
     "current_obo_user", default=None
 )
 
+# Group names from the validated OBO JWT (`groups` claim). Used to decide
+# whether Vault Transform should mask PII before tool results leave user-mcp.
+current_obo_groups: ContextVar[tuple[str, ...]] = ContextVar(
+    "current_obo_groups", default=()
+)
+
 
 def bind_request_identity(
-    scope: str | None, user: str | None = None
-) -> tuple[Token[Any], Token[Any]]:
-    return current_obo_scope.set(scope), current_obo_user.set(user)
+    scope: str | None,
+    user: str | None = None,
+    groups: tuple[str, ...] | None = None,
+) -> tuple[Token[Any], Token[Any], Token[Any]]:
+    return (
+        current_obo_scope.set(scope),
+        current_obo_user.set(user),
+        current_obo_groups.set(groups or ()),
+    )
 
 
-def reset_request_identity(tokens: tuple[Token[Any], Token[Any]]) -> None:
-    scope_token, user_token = tokens
+def reset_request_identity(
+    tokens: tuple[Token[Any], Token[Any], Token[Any]],
+) -> None:
+    scope_token, user_token, groups_token = tokens
+    current_obo_groups.reset(groups_token)
     current_obo_user.reset(user_token)
     current_obo_scope.reset(scope_token)
+
+
+def caller_is_admin() -> bool:
+    """True when the validated OBO token includes the Keycloak `admins` group."""
+    return "admins" in current_obo_groups.get()

@@ -26,6 +26,8 @@ class Settings:
     user_mcp_url: str
     vault_transform_url: str
     vault_transform_role: str
+    vault_token_path: Path
+    opa_url: str
 
 
 def load_settings() -> Settings:
@@ -49,13 +51,18 @@ def load_settings() -> Settings:
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         user_mcp_url=os.getenv("USER_MCP_URL", "http://localhost:8090/mcp"),
         vault_transform_url=os.getenv(
-            "VAULT_TRANSFORM_URL", "http://localhost:8200/v1/transform"
+            "VAULT_TRANSFORM_URL", "http://vault:8200/v1/transform"
         ),
-        vault_transform_role=os.getenv("VAULT_TRANSFORM_ROLE", "pii-masking"),
+        vault_transform_role=os.getenv("VAULT_TRANSFORM_ROLE", "user-mcp-transform"),
+        vault_token_path=Path(
+            os.getenv("VAULT_TOKEN_PATH", "/vault/secrets/vault-token")
+        ),
+        opa_url=os.getenv("OPA_URL", "").rstrip("/"),
     )
     configure_logging(settings.log_level)
     serialized_settings = asdict(settings)
     serialized_settings["actor_token_path"] = str(settings.actor_token_path)
+    serialized_settings["vault_token_path"] = str(settings.vault_token_path)
     log_event(LOGGER, "settings_loaded", message="Settings loaded", **serialized_settings)
     return settings
 

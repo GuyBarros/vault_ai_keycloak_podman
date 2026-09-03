@@ -3,7 +3,7 @@
 ## OAuth 2.0 Authorization Code + PKCE (S256)
 
 ```
-User                Browser                    Next.js                          IBM Verify
+User                Browser                    Next.js                          Keycloak
  │                     │                          │                                  │
  │  click "Login"      │                          │                                  │
  │────────────────────►│                          │                                  │
@@ -41,14 +41,14 @@ User                Browser                    Next.js                          
  │  ◄── workspace ─────│                                                            │
 ```
 
-## Endpoints called on IBM Verify
+## Endpoints called on Keycloak
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `${TENANT_URL}/oidc/endpoint/default/authorize` | GET (redirect) | start flow |
-| `${TENANT_URL}/oidc/endpoint/default/token` | POST | exchange code for tokens |
-| `${TENANT_URL}/oidc/endpoint/default/jwks` | GET | public keys for id_token verification |
-| `${TENANT_URL}/oidc/endpoint/default/logout` | GET (redirect) | RP-initiated end-session |
+| `${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth` | GET (redirect) | start flow |
+| `${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token` | POST | exchange code for tokens |
+| `${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs` | GET | public keys for id_token verification |
+| `${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout` | GET (redirect) | RP-initiated end-session |
 
 ## Cookie contract
 

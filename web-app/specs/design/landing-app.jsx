@@ -164,9 +164,9 @@ function Chat({ messages, typing }) {
 /* ---------- Token Accordion ---------- */
 const TOKENS = [
   {
-    id: 'subject', title: 'Subject token', subtitle: 'id_token · IBM Verify',
+    id: 'subject', title: 'Subject token', subtitle: 'access_token · Keycloak',
     fields: [
-      ['iss',  'https://verify.ibm.com/oidc'],
+      ['iss',  'http://localhost:8081/realms/demo'],
       ['sub',  'pravi@ibm.com'],
       ['aud',  'ai-runtime-ui'],
       ['amr',  'mfa, pwd'],
@@ -277,7 +277,7 @@ function App() {
   const [theme, setTheme] = useState('white');
   const [messages, setMessages] = useState([
     { role: 'user',  text: "Hey, what's up?" },
-    { role: 'agent', text: 'Hello. The runtime is live and your session is governed by IBM Verify. What do you want to work on?' },
+    { role: 'agent', text: 'Hello. The runtime is live and your session is governed by Keycloak. What do you want to work on?' },
   ]);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);

@@ -31,7 +31,7 @@ _ANONYMOUS_DISCOVERY_IDENTITY: dict[str, Any] = {
 
 
 class JwtValidator:
-    """Validates IBM Verify-issued OBO JWTs against signature, audience,
+    """Validates Keycloak-issued OBO JWTs against signature, audience,
     issuer, and time claims."""
 
     def __init__(
@@ -108,11 +108,20 @@ def extract_identity(claims: dict[str, Any]) -> dict[str, Any]:
         scope_claim = _normalize_scope(claims.get("scp"))
     actor_claim = claims.get("actor")
     agent_id = actor_claim.get("agent_id") if isinstance(actor_claim, dict) else None
+    raw_groups = claims.get("groups")
+    groups: tuple[str, ...] = ()
+    if isinstance(raw_groups, list):
+        groups = tuple(
+            str(g).lstrip("/")
+            for g in raw_groups
+            if isinstance(g, str) and g.strip()
+        )
     return {
         "preferred_username": claims.get("preferred_username"),
         "agent_id": agent_id,
         "scope": scope_claim,
         "sub": claims.get("sub"),
+        "groups": groups,
         "raw": claims,
     }
 
@@ -227,7 +236,11 @@ class JwtAuthMiddleware:
             agent_id=identity.get("agent_id"),
             auth_scope=identity.get("scope"),
         )
-        identity_token = bind_request_identity(scope=identity.get("scope"), user=verified_user)
+        identity_token = bind_request_identity(
+            scope=identity.get("scope"),
+            user=verified_user,
+            groups=identity.get("groups") or (),
+        )
         try:
             wrapped_send = _build_request_id_send(send, request_id)
             await self._app(scope, receive, wrapped_send)
