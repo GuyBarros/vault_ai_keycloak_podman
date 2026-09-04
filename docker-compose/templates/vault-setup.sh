@@ -98,8 +98,11 @@ vault write auth/jwt-spiffe/role/user-mcp-spiffe-read - <<'EOF'
 {
   "role_type": "jwt",
   "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
+  "bound_audiences": ["user_mcp"],
   "bound_subject": "spiffe://example.org/user-mcp",
+  "bound_claims": {
+    "sub": "spiffe://example.org/user-mcp"
+  },
   "token_policies": ["user-mcp-spiffe-read"],
   "token_ttl": 300,
   "token_max_ttl": 900,
@@ -111,8 +114,11 @@ vault write auth/jwt-spiffe/role/user-mcp-spiffe-write - <<'EOF'
 {
   "role_type": "jwt",
   "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
+  "bound_audiences": ["user_mcp"],
   "bound_subject": "spiffe://example.org/user-mcp",
+  "bound_claims": {
+    "sub": "spiffe://example.org/user-mcp"
+  },
   "token_policies": ["user-mcp-spiffe-write"],
   "token_ttl": 300,
   "token_max_ttl": 900,
