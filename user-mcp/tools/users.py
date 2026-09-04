@@ -183,7 +183,7 @@ async def _run_tool(tool_name, action, result_summary, masker=None):
         "tool_invoked",
         message=f"{tool_name} invoked",
         tool=tool_name,
-        required_scopes=sorted(get_required_scopes(tool_name)),
+        required_scopes=" ".join(sorted(get_required_scopes(tool_name))),
         **summary,
     )
     return result
