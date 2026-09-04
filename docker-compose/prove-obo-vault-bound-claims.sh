@@ -123,7 +123,9 @@ if "user-mcp-transform" in policies:
     raise SystemExit("SPIFFE workload role must not carry transform policy")
 if any("database" in str(p) for p in policies):
     raise SystemExit("SPIFFE workload role must not mention database policies")
-print("PASS  SPIFFE workload role has no secret policy (token_policies=%s)" % policies)
+if "user-mcp-spiffe-authorize" not in policies:
+    raise SystemExit("SPIFFE workload role must carry control-group authorize, got %s" % policies)
+print("PASS  SPIFFE workload role is authorize-only (token_policies=%s)" % policies)
 PY
 pass=$((pass + 1))
 
@@ -153,7 +155,8 @@ import json, os, subprocess, urllib.parse, urllib.request, sys
 user_read = os.environ["USER_READ"]
 
 code = r'''
-import json, os, urllib.request, urllib.error
+import json, os, asyncio, urllib.request, urllib.error
+from spiffe_client import SpiffeSvidProvider
 
 def req(method, path, payload=None, token=None):
     headers = {}
@@ -170,11 +173,16 @@ def req(method, path, payload=None, token=None):
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read() or b"{}")
 
+async def svid():
+    p = SpiffeSvidProvider("/tmp/spire-agent/api.sock", "TESTING")
+    return (await p.get_jwt_svid()).token
+
 st, body = req("POST", "auth/jwt-keycloak/login", {"role": "user-mcp-oidc-read", "jwt": os.environ["V_JWT"]})
 parent = (body.get("auth") or {}).get("client_token")
 print("OIDC_LOGIN", st)
 if st != 200 or not parent:
     print("OIDC_CREDS", 0)
+    print("WRAP_ONLY", 0)
     print("ACTION_CREATE", 0)
     print("ACTION_CREDS", 0)
     print("ACTION_DISPLAY", "")
@@ -187,6 +195,28 @@ st, body = req("POST", "auth/token/create/user-mcp-action-read", {
     "ttl": "60s",
     "renewable": False,
 }, token=parent)
+direct = (body.get("auth") or {}).get("client_token")
+wrap = (body.get("wrap_info") or body.get("data") or {})
+print("WRAP_ONLY", 1 if (wrap.get("token") and wrap.get("accessor") and not direct) else 0)
+if direct:
+    print("ACTION_CREATE", 0)
+    print("ACTION_CREDS", 0)
+    print("ACTION_DISPLAY", "")
+    raise SystemExit(0)
+st, spiffe_body = req("POST", "auth/jwt-spiffe/login", {"role": "user-mcp-spiffe", "jwt": asyncio.run(svid())})
+spiffe = (spiffe_body.get("auth") or {}).get("client_token")
+if st != 200 or not spiffe:
+    print("ACTION_CREATE", st)
+    print("ACTION_CREDS", 0)
+    print("ACTION_DISPLAY", "")
+    raise SystemExit(0)
+st, _ = req("POST", "sys/control-group/authorize", {"accessor": wrap.get("accessor")}, token=spiffe)
+if st >= 400:
+    print("ACTION_CREATE", st)
+    print("ACTION_CREDS", 0)
+    print("ACTION_DISPLAY", "")
+    raise SystemExit(0)
+st, body = req("POST", "sys/wrapping/unwrap", token=wrap.get("token"))
 print("ACTION_CREATE", st)
 action = (body.get("auth") or {}).get("client_token")
 if st != 200 or not action:
@@ -200,7 +230,15 @@ print("ACTION_DISPLAY", (lookup.get("data") or {}).get("display_name", ""))
 '''
 
 r = subprocess.run(
-    ["docker", "exec", "-e", f"V_JWT={user_read}", "user-mcp", "/app/.venv/bin/python", "-c", code],
+    [
+        "docker", "exec",
+        "-e", f"V_JWT={user_read}",
+        "-e", "PYTHONPATH=/app",
+        "user-mcp",
+        "/app/.venv/bin/python",
+        "-c",
+        code,
+    ],
     capture_output=True, text=True,
 )
 out = r.stdout
@@ -214,9 +252,12 @@ if vals.get("OIDC_LOGIN") != "200":
 if vals.get("OIDC_CREDS") not in ("400", "403"):
     raise SystemExit("human JWT login must not mint DB creds, got %s" % vals.get("OIDC_CREDS"))
 print("PASS  human jwt-keycloak token cannot read database/creds (http %s)" % vals.get("OIDC_CREDS"))
+if vals.get("WRAP_ONLY") != "1":
+    raise SystemExit("human JWT alone must wrap the mint (control group), not issue an action token")
+print("PASS  human JWT alone gets a control-group wrap, not an action token")
 if vals.get("ACTION_CREATE") != "200":
-    raise SystemExit("Vault did not mint combined action token, got %s" % vals.get("ACTION_CREATE"))
-print("PASS  Vault minted combined action token (http 200)")
+    raise SystemExit("SPIFFE authorize+unwrap did not yield combined action token, got %s" % vals.get("ACTION_CREATE"))
+print("PASS  SPIFFE authorized and unwrapped the combined action token (http 200)")
 if vals.get("ACTION_CREDS") != "200":
     raise SystemExit("action token could not read database/creds, got %s" % vals.get("ACTION_CREDS"))
 print("PASS  combined action token reads database/creds (http 200)")
@@ -225,7 +266,7 @@ if "user-mcp" not in display:
     raise SystemExit("action token display_name should include user-mcp, got %r" % display)
 print("PASS  action token display_name=%s" % display)
 PY
-pass=$((pass + 4))
+pass=$((pass + 5))
 
 echo "--- leftover SPIFFE DB roles must not exist ---"
 SPIFFE_WRITE=$(curl -sS -o /tmp/vault-login-body -w "%{http_code}" \

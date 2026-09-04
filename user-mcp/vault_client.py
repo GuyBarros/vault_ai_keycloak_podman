@@ -105,12 +105,14 @@ class VaultClient:
         display_name: str,
         meta: dict[str, str],
         ttl: str = "60s",
+        approver_token: str | None = None,
     ) -> str:
         """Mint the combined user+workload identity via a Vault token role.
 
-        The parent JWT login token must only be allowed to hit
-        auth/token/create/<role>. The returned token is the only one
-        permitted to call database/creds and Transform.
+        The human JWT login may only request auth/token/create/<role>. Vault
+        Control Groups require a SPIFFE-authenticated member of
+        user-mcp-workload to authorize that request. Unwrap then yields the
+        only token permitted to call database/creds and Transform.
         """
         url = f"{self._addr}/v1/auth/token/create/{role}"
         payload = {
@@ -124,12 +126,48 @@ class VaultClient:
                 resp = await client.post(
                     url, json=payload, headers=self._headers(parent_token)
                 )
+                body = _json_body(resp)
         except httpx.HTTPError as exc:
             raise AppError(
                 502,
                 "agent_error",
                 f"Vault action-token create failed (transport): {exc}",
             ) from exc
+
+        wrap = body.get("wrap_info") or {}
+        data = body.get("data") or {}
+        wrap_token = wrap.get("token") or data.get("token")
+        wrap_accessor = wrap.get("accessor") or data.get("accessor")
+        wrapped_accessor = wrap.get("wrapped_accessor") or data.get("wrapped_accessor")
+        if wrap_token and wrap_accessor:
+            if not approver_token:
+                raise AppError(
+                    403,
+                    "invalid_request",
+                    "Vault action-token mint requires SPIFFE control-group "
+                    "approval; the human JWT alone cannot unwrap the combined "
+                    "identity.",
+                )
+            try:
+                await self._authorize_control_group(approver_token, wrap_accessor)
+            except AppError:
+                if wrapped_accessor and wrapped_accessor != wrap_accessor:
+                    await self._authorize_control_group(
+                        approver_token, wrapped_accessor
+                    )
+                else:
+                    raise
+            client_token = await self._unwrap_token(wrap_token)
+            log_event(
+                LOGGER,
+                "vault_action_token_ok",
+                level=logging.INFO,
+                message="Vault minted combined user+workload action identity",
+                vault_role=role,
+                display_name=display_name[:32],
+                control_group="authorized",
+            )
+            return client_token
 
         if resp.status_code >= 400:
             raise AppError(
@@ -139,23 +177,68 @@ class VaultClient:
                 f"{_safe_error_body(resp)}",
             )
 
-        body = resp.json()
-        auth = body.get("auth") or {}
-        client_token = auth.get("client_token")
+        raise AppError(
+            502,
+            "agent_error",
+            "Vault action-token create did not activate a control group; "
+            "refusing to use a token minted without SPIFFE approval.",
+        )
+
+    async def _authorize_control_group(self, approver_token: str, accessor: str) -> None:
+        url = f"{self._addr}/v1/sys/control-group/authorize"
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(
+                    url,
+                    json={"accessor": accessor},
+                    headers=self._headers(approver_token),
+                )
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault control-group authorize failed (transport): {exc}",
+            ) from exc
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault control-group authorize rejected (status={resp.status_code}): "
+                f"{_safe_error_body(resp)}",
+            )
+        log_event(
+            LOGGER,
+            "vault_control_group_ok",
+            level=logging.INFO,
+            message="SPIFFE identity authorized the action-token control group",
+        )
+
+    async def _unwrap_token(self, wrapping_token: str) -> str:
+        url = f"{self._addr}/v1/sys/wrapping/unwrap"
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(url, headers=self._headers(wrapping_token))
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault unwrap failed (transport): {exc}",
+            ) from exc
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault unwrap rejected (status={resp.status_code}): "
+                f"{_safe_error_body(resp)}",
+            )
+        body = _json_body(resp)
+        client_token = (body.get("auth") or {}).get("client_token")
         if not client_token:
             raise AppError(
                 502,
                 "agent_error",
-                "Vault action-token response did not include auth.client_token.",
+                "Vault unwrap response did not include auth.client_token.",
             )
-        log_event(
-            LOGGER,
-            "vault_action_token_ok",
-            level=logging.INFO,
-            message="Vault minted combined user+workload action identity",
-            vault_role=role,
-            display_name=display_name[:32],
-        )
         return client_token
 
     async def transform_encode(
@@ -253,6 +336,14 @@ def _vault_status_to_app_error(status: int) -> str:
     if status in (400, 401, 403):
         return "invalid_request"
     return "agent_error"
+
+
+def _json_body(resp: httpx.Response) -> dict:
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
 
 
 def _safe_error_body(resp: httpx.Response) -> str:

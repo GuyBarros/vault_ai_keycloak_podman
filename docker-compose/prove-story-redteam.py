@@ -410,15 +410,56 @@ def main() -> int:
             },
         )
         action = (minted.get("auth") or {}).get("client_token")
-        if st2 == 200 and action:
-            hold("Vault minted combined user+user-mcp action token")
-            cr, creds, _ = vault_get_mcp("database/creds/user-mcp-read-role", action)
-            if cr == 200:
-                hold("combined action token mints read DB creds")
+        wrap = minted.get("wrap_info") or minted.get("data") or {}
+        wrapping = wrap.get("token") or ""
+        accessor = wrap.get("accessor") or ""
+        if action:
+            kill(
+                "human JWT minted the action token without SPIFFE control-group "
+                "approval — Vault did not AND user+agent"
+            )
+        elif wrapping and accessor:
+            hold("human JWT alone got a control-group wrap, not an action token")
+            if not svid:
+                kill("no SVID; cannot prove SPIFFE authorize+unwrap")
             else:
-                kill(f"combined action token cannot mint read DB creds (http {cr})")
+                st_s, sbody, _ = vault_login_mcp(
+                    "user-mcp-spiffe", svid, path="jwt-spiffe"
+                )
+                spiffe_tok = (sbody.get("auth") or {}).get("client_token")
+                if st_s != 200 or not spiffe_tok:
+                    kill(f"SPIFFE login for control-group authorize failed (http {st_s})")
+                else:
+                    ast, _, _ = vault_post_mcp(
+                        "sys/control-group/authorize",
+                        spiffe_tok,
+                        {"accessor": accessor},
+                    )
+                    if ast >= 400:
+                        kill(f"SPIFFE control-group authorize failed (http {ast})")
+                    else:
+                        ust, ubody, _ = vault_post_mcp(
+                            "sys/wrapping/unwrap", wrapping, {}
+                        )
+                        action = (ubody.get("auth") or {}).get("client_token")
+                        if ust == 200 and action:
+                            hold(
+                                "SPIFFE authorized and unwrapped the combined action token"
+                            )
+                            cr, creds, _ = vault_get_mcp(
+                                "database/creds/user-mcp-read-role", action
+                            )
+                            if cr == 200:
+                                hold("combined action token mints read DB creds")
+                            else:
+                                kill(
+                                    "combined action token cannot mint read DB creds "
+                                    f"(http {cr})"
+                                )
+                        else:
+                            kill(f"unwrap after SPIFFE authorize failed (http {ust})")
         else:
-            kill(f"Vault did not mint combined action token (http {st2})")
+            kill(f"Vault did not wrap or mint combined action token (http {st2})")
     else:
         kill(f"user-mcp OIDC read login failed (http {st})")
 

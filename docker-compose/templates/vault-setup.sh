@@ -75,21 +75,29 @@ vault write auth/jwt-spiffe/config \
 
 echo "vault-setup: jwt-spiffe config written (JWKS from proxy)."
 
+vault policy write user-mcp-spiffe-authorize - <<'EOF'
+path "sys/control-group/authorize" {
+  capabilities = ["create", "update"]
+}
+path "sys/control-group/request" {
+  capabilities = ["create", "update"]
+}
+EOF
+
 # Drop legacy user-mcp SPIFFE roles that could mint DB creds from workload
 # identity alone (no human bound_claims). Workload + transform roles follow.
 vault delete auth/jwt-spiffe/role/user-mcp-spiffe-read >/dev/null 2>&1 || true
 vault delete auth/jwt-spiffe/role/user-mcp-spiffe-write >/dev/null 2>&1 || true
 
-# Workload attestation only: bound_subject is the user-mcp SPIFFE ID.
-# token_policies=default — no secrets, no token-role mint. This login
-# proves the caller is user-mcp; it cannot execute Vault actions.
+# Workload attestation + control-group approval for the action token.
+# No secrets and no token-role mint — those stay on the combined identity.
 vault write auth/jwt-spiffe/role/user-mcp-spiffe - <<'EOF'
 {
   "role_type": "jwt",
   "user_claim": "sub",
   "bound_audiences": ["TESTING"],
   "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["default"],
+  "token_policies": ["default", "user-mcp-spiffe-authorize"],
   "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,
@@ -97,7 +105,7 @@ vault write auth/jwt-spiffe/role/user-mcp-spiffe - <<'EOF'
 }
 EOF
 
-echo "vault-setup: jwt-spiffe user-mcp workload role written (attestation only)."
+echo "vault-setup: jwt-spiffe user-mcp workload role written (authorize only)."
 
 # ── JWT auth backend for Keycloak OBO tokens (human authorization) ───────────
 # user-mcp presents the caller's OBO JWT. Vault validates signature, audience,
@@ -145,12 +153,42 @@ EOF
 vault policy write user-mcp-mint-action-read - <<'EOF'
 path "auth/token/create/user-mcp-action-read" {
   capabilities = ["update"]
+  control_group = {
+    ttl = "2m"
+    factor "user-mcp-workload" {
+      identity {
+        group_names = ["user-mcp-workload"]
+        approvals = 1
+      }
+    }
+  }
 }
 EOF
 
 vault policy write user-mcp-mint-action-write - <<'EOF'
 path "auth/token/create/user-mcp-action-write" {
   capabilities = ["update"]
+  control_group = {
+    ttl = "2m"
+    factor "user-mcp-workload" {
+      identity {
+        group_names = ["user-mcp-workload"]
+        approvals = 1
+      }
+    }
+  }
+}
+EOF
+
+# SPIFFE login may only approve a pending action-token mint. No secrets,
+# no token-role create. That is the Vault AND: human requests, workload
+# authorizes, unwrap yields the combined action identity.
+vault policy write user-mcp-spiffe-authorize - <<'EOF'
+path "sys/control-group/authorize" {
+  capabilities = ["create", "update"]
+}
+path "sys/control-group/request" {
+  capabilities = ["create", "update"]
 }
 EOF
 
@@ -306,6 +344,27 @@ echo "vault-setup: ai-agent entity id = ${ENTITY_ID}"
 # SPIFFE login maps to the ai-agent identity entity.
 JWT_SPIFFE_ACCESSOR=$(vault auth list -detailed -format=table \
   | awk '/^jwt-spiffe\// {print $3}')
+echo "vault-setup: jwt-spiffe accessor = ${JWT_SPIFFE_ACCESSOR}"
+if [ -z "${JWT_SPIFFE_ACCESSOR}" ]; then
+  echo "vault-setup: ERROR — could not resolve jwt-spiffe accessor" >&2
+  exit 1
+fi
+
+vault write identity/entity name=user-mcp-workload
+USER_MCP_ENTITY_ID=$(vault read -field=id identity/entity/name/user-mcp-workload)
+echo "vault-setup: user-mcp workload entity id = ${USER_MCP_ENTITY_ID}"
+
+vault write identity/entity-alias \
+  name="spiffe://example.org/user-mcp" \
+  canonical_id="${USER_MCP_ENTITY_ID}" \
+  mount_accessor="${JWT_SPIFFE_ACCESSOR}" \
+  || echo "vault-setup: user-mcp entity-alias already present (ok on re-run)."
+
+vault write identity/group \
+  name=user-mcp-workload \
+  type=internal \
+  member_entity_ids="${USER_MCP_ENTITY_ID}"
+echo "vault-setup: identity group user-mcp-workload written."
 
 vault write identity/entity-alias \
   name="spiffe://example.org/ai-agent" \

@@ -241,7 +241,7 @@ class PostgresUserRepository(UserRepository):
             vault_auth_mode="spiffe+oidc-obo+action",
             vault_role=action_role,
         )
-        await self._vault.login_with_jwt(
+        spiffe_token = await self._vault.login_with_jwt(
             svid.token,
             self._spiffe_workload_role,
             jwt_path=self._spiffe_jwt_path,
@@ -259,6 +259,7 @@ class PostgresUserRepository(UserRepository):
                     "spiffe_id": svid.spiffe_id,
                     "obo_role": jwt_role,
                 },
+                approver_token=spiffe_token,
             )
             current_vault_action_token.set(action_token)
         creds = await self._vault.read_database_creds(action_token, db_creds_path)
