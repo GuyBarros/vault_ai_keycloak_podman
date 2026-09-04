@@ -6,7 +6,7 @@ from typing import Any, AsyncIterator
 
 import asyncpg
 
-from auth.context import current_obo_scope, current_obo_user
+from auth.context import current_obo_scope, current_obo_token, current_obo_user
 from errors import AppError
 from logging_utils import bind_log_context, log_event
 from models import UserRecord
@@ -54,10 +54,15 @@ class PostgresUserRepository(UserRepository):
       USER_MCP_DB_USER / USER_MCP_DB_PASSWORD. Intended only for connectivity
       testing.
     - ``vault``: every request mints short-lived Postgres credentials from
-      Vault. user-mcp authenticates to Vault with its own SPIFFE JWT-SVID
-      (workload identity); the read vs. write Vault role is still selected
-      from the request's validated OIDC scope. Each tool call opens a fresh
-      asyncpg connection bound to the issued credentials, then closes it.
+      Vault. Two Vault logins on every request:
+
+      1. SPIFFE JWT-SVID (workload identity). Proves this process is
+         user-mcp. The SPIFFE role has no database/creds policy.
+      2. Keycloak OBO JWT (human identity). Vault bound_claims on groups
+         and OIDC scope decide whether read or write DB creds are issued.
+
+      Each tool call opens a fresh asyncpg connection bound to the issued
+      credentials, then closes it.
     """
 
     def __init__(
@@ -75,6 +80,8 @@ class PostgresUserRepository(UserRepository):
         vault_jwt_write_role: str = "",
         vault_db_read_path: str = "",
         vault_db_write_path: str = "",
+        vault_spiffe_jwt_path: str = "",
+        vault_spiffe_workload_role: str = "",
     ):
         if not pg_url:
             raise AppError(
@@ -108,6 +115,12 @@ class PostgresUserRepository(UserRepository):
                     "configuration_error",
                     "SPIFFE SVID provider is required when USER_MCP_DB_AUTH_MODE=vault.",
                 )
+            if not vault_spiffe_jwt_path or not vault_spiffe_workload_role:
+                raise AppError(
+                    500,
+                    "configuration_error",
+                    "SPIFFE Vault JWT path and workload role are required.",
+                )
             if not vault_jwt_read_role or not vault_jwt_write_role:
                 raise AppError(
                     500,
@@ -128,6 +141,8 @@ class PostgresUserRepository(UserRepository):
         self._db_password = db_password
         self._vault = vault_client
         self._spiffe = spiffe_provider
+        self._spiffe_jwt_path = vault_spiffe_jwt_path
+        self._spiffe_workload_role = vault_spiffe_workload_role
         self._jwt_read_role = vault_jwt_read_role
         self._jwt_write_role = vault_jwt_write_role
         self._db_read_path = vault_db_read_path
@@ -188,21 +203,20 @@ class PostgresUserRepository(UserRepository):
                 yield conn
             return
 
-        # vault mode: user-mcp authenticates to Vault with its own SPIFFE
-        # JWT-SVID (workload identity) — but only on behalf of a request that
-        # carried a real, validated human user. Without that, user-mcp must
-        # never be able to mint Vault-backed database credentials for itself:
-        # a request with a technically-valid scope but no attached user (e.g.
-        # a service/client-credentials token) is refused here, before the
-        # SPIFFE identity is even fetched.
+        # vault mode: SPIFFE attests the workload, then the human OBO JWT
+        # authorizes database/creds via jwt-keycloak bound_claims. Vault also
+        # binds those tokens to the user-mcp CIDR (token_bound_cidrs), so a
+        # stolen OBO presented on the published Vault port cannot mint creds.
+        # Either login failing means no Postgres credentials.
         user = current_obo_user.get(None)
-        if not user:
+        obo_token = current_obo_token.get(None)
+        if not user or not obo_token:
             raise AppError(
                 401,
                 "invalid_request",
-                "A validated user is required to obtain database credentials "
-                "in vault mode; user-mcp will not authenticate to Vault on "
-                "behalf of a request with no attached user.",
+                "A validated user OBO token is required to obtain database "
+                "credentials in vault mode; user-mcp will not authenticate to "
+                "Vault on behalf of a request with no attached user.",
             )
 
         scope = current_obo_scope.get(None) or ""
@@ -211,8 +225,17 @@ class PostgresUserRepository(UserRepository):
         assert self._vault is not None
         assert self._spiffe is not None
         svid = await self._spiffe.get_jwt_svid()
-        bind_log_context(workload_spiffe_id=svid.spiffe_id, vault_auth_mode="spiffe")
-        client_token = await self._vault.login_with_jwt(svid.token, jwt_role)
+        bind_log_context(
+            workload_spiffe_id=svid.spiffe_id,
+            vault_auth_mode="spiffe+oidc-obo",
+            vault_role=jwt_role,
+        )
+        await self._vault.login_with_jwt(
+            svid.token,
+            self._spiffe_workload_role,
+            jwt_path=self._spiffe_jwt_path,
+        )
+        client_token = await self._vault.login_with_jwt(obo_token, jwt_role)
         creds = await self._vault.read_database_creds(client_token, db_creds_path)
 
         try:

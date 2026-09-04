@@ -50,9 +50,11 @@ vault write database/roles/user-mcp-write-role \
   default_ttl=1h \
   max_ttl=24h
 
-# ── JWT auth backend for user-mcp SPIFFE workload identity ───────────────────
-# SPIRE's JWKS endpoint is used so Vault can verify JWT-SVIDs issued by SPIRE.
-# The bound_subject enforces exactly the user-mcp SPIFFE ID.
+# ── JWT auth backend for SPIFFE workload identity ────────────────────────────
+# Used by ai-agent (actor token), by user-mcp on every DB-cred request
+# (workload attestation), and by user-mcp Transform (PII masking).
+# SPIFFE login never grants database/creds — that requires the human
+# Keycloak OBO token on jwt-keycloak below.
 vault auth list | grep -q "^jwt-spiffe/" || \
   vault auth enable -path=jwt-spiffe jwt
 
@@ -73,52 +75,106 @@ vault write auth/jwt-spiffe/config \
 
 echo "vault-setup: jwt-spiffe config written (JWKS from proxy)."
 
-# Policy: spiffe workload gets DB read creds + transform encode
-vault policy write user-mcp-spiffe-read - <<'EOF'
+# Drop legacy user-mcp SPIFFE roles that could mint DB creds from workload
+# identity alone (no human bound_claims). Workload + transform roles follow.
+vault delete auth/jwt-spiffe/role/user-mcp-spiffe-read >/dev/null 2>&1 || true
+vault delete auth/jwt-spiffe/role/user-mcp-spiffe-write >/dev/null 2>&1 || true
+
+# Workload attestation only: bound_subject is the user-mcp SPIFFE ID.
+# token_policies=default — no database/creds, no transform. Proves the
+# caller is this workload before jwt-keycloak issues DB credentials.
+vault write auth/jwt-spiffe/role/user-mcp-spiffe - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["TESTING"],
+  "bound_subject": "spiffe://example.org/user-mcp",
+  "token_policies": ["default"],
+  "token_bound_cidrs": ["172.28.0.20/32"],
+  "token_ttl": 300,
+  "token_max_ttl": 900,
+  "token_type": "service"
+}
+EOF
+
+echo "vault-setup: jwt-spiffe user-mcp workload role written (no DB policy)."
+
+# ── JWT auth backend for Keycloak OBO tokens (human authorization) ───────────
+# user-mcp presents the caller's OBO JWT. Vault validates signature, audience,
+# issuer, and bound_claims (Keycloak groups + OIDC scope) before issuing a
+# token that can read database/creds/*. A reader token cannot assume the write
+# role even if the workload asks for it.
+vault auth list | grep -q "^jwt-keycloak/" || \
+  vault auth enable -path=jwt-keycloak jwt
+
+echo "vault-setup: waiting for Keycloak JWKS..."
+until wget -qO- http://keycloak:8080/realms/demo/protocol/openid-connect/certs >/dev/null 2>&1; do
+  sleep 2
+done
+echo "vault-setup: Keycloak JWKS is up."
+
+# Tokens carry iss=http://localhost:8081/realms/demo (KC_HOSTNAME). JWKS is
+# fetched over the Docker network; bound_issuer must match the public iss.
+vault write auth/jwt-keycloak/config \
+  jwks_url="http://keycloak:8080/realms/demo/protocol/openid-connect/certs" \
+  bound_issuer="http://localhost:8081/realms/demo" \
+  jwt_supported_algs="RS256"
+
+vault policy write user-mcp-oidc-read - <<'EOF'
 path "database/creds/user-mcp-read-role" {
   capabilities = ["read"]
 }
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
 EOF
 
-vault policy write user-mcp-spiffe-write - <<'EOF'
+vault policy write user-mcp-oidc-write - <<'EOF'
 path "database/creds/user-mcp-write-role" {
   capabilities = ["read"]
 }
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
 EOF
 
-# JWT roles bound to the user-mcp SPIFFE ID.
-# sub claim in a JWT-SVID is the SPIFFE ID URI.
-vault write auth/jwt-spiffe/role/user-mcp-spiffe-read - <<'EOF'
+# bound_claims is AND across keys; list values are OR. glob so space-separated
+# OIDC `scope` still matches when other scopes are present.
+# writers may also read (list users); readers cannot login to the write role.
+# token_bound_cidrs pins issued tokens (and login) to the user-mcp workload
+# address — SPIFFE still attests that process; a laptop with a stolen OBO
+# cannot mint database/creds on the published Vault port.
+vault write auth/jwt-keycloak/role/user-mcp-oidc-read - <<'EOF'
 {
   "role_type": "jwt",
-  "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
-  "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["user-mcp-spiffe-read"],
+  "user_claim": "preferred_username",
+  "bound_audiences": ["user-mcp"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "groups": ["readers", "writers"],
+    "scope": "*users.read*"
+  },
+  "token_policies": ["user-mcp-oidc-read"],
+  "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,
   "token_type": "service"
 }
 EOF
 
-vault write auth/jwt-spiffe/role/user-mcp-spiffe-write - <<'EOF'
+vault write auth/jwt-keycloak/role/user-mcp-oidc-write - <<'EOF'
 {
   "role_type": "jwt",
-  "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
-  "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["user-mcp-spiffe-write"],
+  "user_claim": "preferred_username",
+  "bound_audiences": ["user-mcp"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "groups": ["writers"],
+    "scope": "*users.write*"
+  },
+  "token_policies": ["user-mcp-oidc-write"],
+  "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,
   "token_type": "service"
 }
 EOF
+
+echo "vault-setup: jwt-keycloak roles written (bound_claims on groups + scope)."
 
 # Vault OIDC identity: issuer + role for the ai-agent ──
 vault write identity/oidc/config \
@@ -162,8 +218,8 @@ path "opa-policies/data/bundle" {
 EOF
 
 # SPIFFE JWT auth for the ai-agent (vault-agent authenticates via SPIRE SVID).
-# The jwt-spiffe mount is already configured above for user-mcp; we reuse it
-# and add a dedicated role bound to the ai-agent SPIFFE ID.
+# The jwt-spiffe mount is already configured above; we add a dedicated role
+# bound to the ai-agent SPIFFE ID.
 
 vault policy write ai-agent-spiffe-policy - <<'EOF'
 path "identity/oidc/token/agent-role" {
@@ -295,6 +351,22 @@ vault write transform/role/user-mcp-transform \
 vault policy write user-mcp-transform - <<'EOF'
 path "transform/encode/user-mcp-transform" {
   capabilities = ["create", "update"]
+}
+EOF
+
+# SPIFFE role for Transform only — no database/creds. Workload identity can
+# mask PII; it cannot mint Postgres credentials.
+vault write auth/jwt-spiffe/role/user-mcp-spiffe-transform - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["TESTING"],
+  "bound_subject": "spiffe://example.org/user-mcp",
+  "token_policies": ["user-mcp-transform"],
+  "token_bound_cidrs": ["172.28.0.20/32"],
+  "token_ttl": 300,
+  "token_max_ttl": 900,
+  "token_type": "service"
 }
 EOF
 

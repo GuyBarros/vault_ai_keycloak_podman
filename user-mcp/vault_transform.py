@@ -25,7 +25,7 @@ import asyncio
 import logging
 import re
 
-from logging_utils import log_event
+from logging_utils import bind_log_context, log_event
 from models import UserRecord
 from vault_client import VaultClient
 
@@ -188,6 +188,7 @@ class TransformMasker:
     async def mask_result(self, result):
         """Mask a UserRecord or list[UserRecord]; other values pass through."""
         svid = await self._spiffe.get_jwt_svid()
+        bind_log_context(vault_auth_mode="spiffe", vault_role=self._jwt_role)
         client_token = await self._vault.login_with_jwt(svid.token, self._jwt_role)
         if isinstance(result, list) and result and isinstance(result[0], UserRecord):
             masked = await mask_user_records(

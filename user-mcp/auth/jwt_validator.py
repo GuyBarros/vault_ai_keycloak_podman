@@ -209,6 +209,7 @@ class JwtAuthMiddleware:
         await self._dispatch_with_context(
             scope, receive, send, identity, request_id,
             verified_user=identity.get("preferred_username"),
+            bearer_token=token,
         )
 
     async def _dispatch_with_context(
@@ -219,6 +220,7 @@ class JwtAuthMiddleware:
         identity: dict[str, Any],
         request_id: str,
         verified_user: str | None = None,
+        bearer_token: str | None = None,
     ) -> None:
         """Run the wrapped app with request-scoped log context and identity bound.
 
@@ -240,6 +242,7 @@ class JwtAuthMiddleware:
             scope=identity.get("scope"),
             user=verified_user,
             groups=identity.get("groups") or (),
+            token=bearer_token if verified_user else None,
         )
         try:
             wrapped_send = _build_request_id_send(send, request_id)

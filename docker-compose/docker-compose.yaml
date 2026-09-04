@@ -317,6 +317,7 @@ services:
         condition: service_started
     networks:
       app-network:
+        ipv4_address: 172.28.0.20
         aliases:
           - user-mcp
 
@@ -598,6 +599,13 @@ services:
 networks:
   app-network:
     driver: bridge
+    ipam:
+      config:
+        # user-mcp is pinned at .20 so Vault token_bound_cidrs can require
+        # jwt-keycloak / user-mcp SPIFFE tokens to be used only from that
+        # workload — a stolen OBO JWT presented on localhost:8200 cannot
+        # mint database/creds.
+        - subnet: 172.28.0.0/16
 
 volumes:
   spire-data:

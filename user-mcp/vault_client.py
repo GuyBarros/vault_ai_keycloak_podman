@@ -22,12 +22,11 @@ class DynamicDbCredentials:
 class VaultClient:
     """Thin async Vault client for the JWT login + database creds flow.
 
-    Authenticates to Vault with a SPIFFE JWT-SVID (this workload's own
-    identity, fetched from the local SPIRE Workload API — see
-    spiffe_client.py) to obtain a short-lived Vault client token, then reads
-    dynamic Postgres credentials from the database secrets engine using that
-    token. Which Vault role to request (read vs. write) is still selected by
-    the caller from the human user's validated OIDC scope.
+    Authenticates to Vault with a JWT — SPIFFE JWT-SVID for workload
+    attestation / Transform, Keycloak OBO for database/creds. Which OIDC
+    role to request for DB creds is selected from the human user's
+    validated scope; Vault bound_claims decide whether that login is
+    allowed. SPIFFE login is required but never sufficient for DB creds.
     """
 
     def __init__(
@@ -58,8 +57,11 @@ class VaultClient:
             headers["X-Vault-Token"] = client_token
         return headers
 
-    async def login_with_jwt(self, jwt_token: str, role: str) -> str:
-        url = f"{self._addr}/v1/auth/{self._jwt_path}/login"
+    async def login_with_jwt(
+        self, jwt_token: str, role: str, jwt_path: str | None = None
+    ) -> str:
+        path = (jwt_path or self._jwt_path).strip("/")
+        url = f"{self._addr}/v1/auth/{path}/login"
         payload = {"role": role, "jwt": jwt_token}
         try:
             async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
@@ -93,7 +95,7 @@ class VaultClient:
             level=logging.INFO,
             message="Vault JWT login succeeded",
             vault_role=role,
-            jwt_path=self._jwt_path,
+            jwt_path=path,
         )
         return client_token
 

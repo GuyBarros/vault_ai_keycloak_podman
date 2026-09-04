@@ -61,7 +61,7 @@ help:
 	@echo "  make             Full reset, build, and start for the selected arch"
 	@echo "  make build       Build local images for DOCKER_PLATFORM"
 	@echo "  make clear       Stop stack and delete volumes"
-	@echo "  make help        Show this message"
+	@echo "  make prove-obo-vault  Prove jwt-keycloak bound_claims (stack must be up)"
 
 # check-env validates that every required variable is set and non-empty.
 check-env:
@@ -93,4 +93,8 @@ clear:
 build:
 	docker compose build
 
-.PHONY: all help check-env clear build
+prove-obo-vault:
+	chmod +x ./prove-obo-vault-bound-claims.sh
+	./prove-obo-vault-bound-claims.sh
+
+.PHONY: all help check-env clear build prove-obo-vault

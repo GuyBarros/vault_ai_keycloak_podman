@@ -359,7 +359,7 @@
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s spiffe_id={{.workload_spiffe_id}} request_id={{.request_id}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s role={{.vault_role}} request_id={{.request_id}}\"",
           "legendFormat": ""
         }
       ],
@@ -369,7 +369,7 @@
 
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "user-mcp authenticating to Vault with its own SPIFFE JWT-SVID (workload identity) to mint the DB credentials above. Threads the full chain: which user, through which agent, with what scope, resolved to which SPIFFE workload and Vault role.",
+      "description": "user-mcp authenticating to Vault twice per DB call: SPIFFE JWT-SVID (workload) then the human OBO JWT. jwt-keycloak roles enforce bound_claims on Keycloak groups and OIDC scope before minting DB credentials.",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 45 },
       "id": 42,
       "options": {
@@ -384,10 +384,10 @@
       },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "{container=\"user-mcp\"} | json | event=\"vault_login_ok\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] scope={{.auth_scope}} spiffe_id={{.workload_spiffe_id}} vault_role={{.vault_role}} request_id={{.request_id}}\"",
+        "expr": "{container=\"user-mcp\"} | json | event=\"vault_login_ok\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] scope={{.auth_scope}} spiffe_id={{.workload_spiffe_id}} auth={{.vault_auth_mode}} vault_role={{.vault_role}} jwt_path={{.jwt_path}} request_id={{.request_id}}\"",
         "legendFormat": ""
       }],
-      "title": "SPIFFE Vault Logins (user → agent → workload → role)",
+      "title": "Vault Logins (SPIFFE workload + OIDC bound_claims)",
       "type": "logs"
     },
 

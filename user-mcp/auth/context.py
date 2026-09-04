@@ -25,23 +25,32 @@ current_obo_groups: ContextVar[tuple[str, ...]] = ContextVar(
     "current_obo_groups", default=()
 )
 
+# Raw validated Bearer token presented to Vault JWT login (jwt-keycloak).
+# Only set when a real user was authenticated — never for bypass/discovery.
+current_obo_token: ContextVar[Optional[str]] = ContextVar(
+    "current_obo_token", default=None
+)
+
 
 def bind_request_identity(
     scope: str | None,
     user: str | None = None,
     groups: tuple[str, ...] | None = None,
-) -> tuple[Token[Any], Token[Any], Token[Any]]:
+    token: str | None = None,
+) -> tuple[Token[Any], Token[Any], Token[Any], Token[Any]]:
     return (
         current_obo_scope.set(scope),
         current_obo_user.set(user),
         current_obo_groups.set(groups or ()),
+        current_obo_token.set(token),
     )
 
 
 def reset_request_identity(
-    tokens: tuple[Token[Any], Token[Any], Token[Any]],
+    tokens: tuple[Token[Any], Token[Any], Token[Any], Token[Any]],
 ) -> None:
-    scope_token, user_token, groups_token = tokens
+    scope_token, user_token, groups_token, obo_token = tokens
+    current_obo_token.reset(obo_token)
     current_obo_groups.reset(groups_token)
     current_obo_user.reset(user_token)
     current_obo_scope.reset(scope_token)

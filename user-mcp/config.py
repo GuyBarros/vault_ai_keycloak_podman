@@ -64,16 +64,28 @@ class Settings(BaseSettings):
     vault_addr: str = Field(default="", alias="USER_MCP_VAULT_ADDR")
     vault_namespace: str = Field(default="", alias="USER_MCP_VAULT_NAMESPACE")
 
-    # SPIFFE workload identity: user-mcp authenticates to Vault with a JWT-SVID
-    # fetched from the local SPIRE Workload API, not with the caller's OBO token.
+    # Keycloak OBO JWT auth: Vault bound_claims on groups + scope decide
+    # read vs write DB creds. Required in addition to SPIFFE below.
+    vault_jwt_path: str = Field(default="jwt-keycloak", alias="USER_MCP_VAULT_JWT_PATH")
+    vault_jwt_read_role: str = Field(
+        default="user-mcp-oidc-read", alias="USER_MCP_VAULT_JWT_READ_ROLE"
+    )
+    vault_jwt_write_role: str = Field(
+        default="user-mcp-oidc-write", alias="USER_MCP_VAULT_JWT_WRITE_ROLE"
+    )
+
+    # SPIFFE workload identity: every Vault DB-cred request first logs in
+    # with this process's JWT-SVID (bound_subject = user-mcp). That login
+    # has no database/creds policy — it only attests the workload. Transform
+    # (PII masking) also uses SPIFFE.
     spiffe_socket: str = Field(default="", alias="USER_MCP_SPIFFE_SOCKET")
     spiffe_jwt_audience: str = Field(default="", alias="USER_MCP_SPIFFE_JWT_AUDIENCE")
     vault_spiffe_jwt_path: str = Field(default="jwt-spiffe", alias="USER_MCP_VAULT_SPIFFE_JWT_PATH")
-    vault_spiffe_read_role: str = Field(
-        default="user-mcp-spiffe-read", alias="USER_MCP_VAULT_SPIFFE_READ_ROLE"
+    vault_spiffe_workload_role: str = Field(
+        default="user-mcp-spiffe", alias="USER_MCP_VAULT_SPIFFE_WORKLOAD_ROLE"
     )
-    vault_spiffe_write_role: str = Field(
-        default="user-mcp-spiffe-write", alias="USER_MCP_VAULT_SPIFFE_WRITE_ROLE"
+    vault_spiffe_transform_role: str = Field(
+        default="user-mcp-spiffe-transform", alias="USER_MCP_VAULT_SPIFFE_TRANSFORM_ROLE"
     )
     vault_db_read_path: str = Field(
         default="database/creds/user-mcp-read-role",
@@ -115,12 +127,11 @@ class Settings(BaseSettings):
 def _validate_compatibility(settings: Settings) -> None:
     """Catch deploy-time misconfigurations before the first request hits.
 
-    Vault-mode DB credentials authenticate to Vault with user-mcp's own SPIFFE
-    JWT-SVID (see storage/postgres_repo.py:_acquire), but still pick the
-    read/write Vault role from the caller's validated OIDC scope. Bypass mode
-    discards the Authorization header entirely (see auth/jwt_validator.py:
-    bypass branch), so scope is always empty and role selection always fails —
-    the two together produce a service that always 500s on tools/call.
+    Vault-mode DB credentials require a SPIFFE workload login and a Keycloak
+    OBO JWT (see storage/postgres_repo.py:_acquire). Bypass mode discards the
+    Authorization header entirely (see auth/jwt_validator.py: bypass branch),
+    so there is no user token to present and Vault login cannot succeed — the
+    two together produce a service that always 500s on tools/call.
     """
     if (
         settings.bypass_auth
