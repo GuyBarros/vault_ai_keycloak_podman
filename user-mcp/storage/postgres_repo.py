@@ -6,11 +6,10 @@ from typing import Any, AsyncIterator
 
 import asyncpg
 
-from auth.context import current_obo_scope, current_obo_user
+from auth.context import current_obo_scope, current_obo_token, current_obo_user
 from errors import AppError
 from logging_utils import bind_log_context, log_event
 from models import UserRecord
-from spiffe_client import SpiffeSvidProvider
 from storage.base import UserRepository
 from vault_client import VaultClient
 
@@ -54,10 +53,12 @@ class PostgresUserRepository(UserRepository):
       USER_MCP_DB_USER / USER_MCP_DB_PASSWORD. Intended only for connectivity
       testing.
     - ``vault``: every request mints short-lived Postgres credentials from
-      Vault. user-mcp authenticates to Vault with its own SPIFFE JWT-SVID
-      (workload identity); the read vs. write Vault role is still selected
-      from the request's validated OIDC scope. Each tool call opens a fresh
-      asyncpg connection bound to the issued credentials, then closes it.
+      Vault by presenting the caller's own validated Keycloak access token
+      directly as the Vault token (Vault's native Agentic IAM — see
+      docker-compose/templates/vault-setup.sh). The read vs. write path is
+      still selected from that same token's validated OIDC scope. Each tool
+      call opens a fresh asyncpg connection bound to the issued credentials,
+      then closes it.
     """
 
     def __init__(
@@ -70,9 +71,8 @@ class PostgresUserRepository(UserRepository):
         db_password: str = "",
         # vault mode
         vault_client: VaultClient | None = None,
-        spiffe_provider: SpiffeSvidProvider | None = None,
-        vault_jwt_read_role: str = "",
-        vault_jwt_write_role: str = "",
+        vault_ceiling_policy_read: str = "",
+        vault_ceiling_policy_write: str = "",
         vault_db_read_path: str = "",
         vault_db_write_path: str = "",
     ):
@@ -102,17 +102,11 @@ class PostgresUserRepository(UserRepository):
                     "configuration_error",
                     "Vault client is required when USER_MCP_DB_AUTH_MODE=vault.",
                 )
-            if spiffe_provider is None:
+            if not vault_ceiling_policy_read or not vault_ceiling_policy_write:
                 raise AppError(
                     500,
                     "configuration_error",
-                    "SPIFFE SVID provider is required when USER_MCP_DB_AUTH_MODE=vault.",
-                )
-            if not vault_jwt_read_role or not vault_jwt_write_role:
-                raise AppError(
-                    500,
-                    "configuration_error",
-                    "Vault JWT read/write role names are required.",
+                    "Vault ceiling policy names are required.",
                 )
             if not vault_db_read_path or not vault_db_write_path:
                 raise AppError(
@@ -127,9 +121,8 @@ class PostgresUserRepository(UserRepository):
         self._db_user = db_user
         self._db_password = db_password
         self._vault = vault_client
-        self._spiffe = spiffe_provider
-        self._jwt_read_role = vault_jwt_read_role
-        self._jwt_write_role = vault_jwt_write_role
+        self._ceiling_policy_read = vault_ceiling_policy_read
+        self._ceiling_policy_write = vault_ceiling_policy_write
         self._db_read_path = vault_db_read_path
         self._db_write_path = vault_db_write_path
         self._pool: asyncpg.Pool | None = None
@@ -188,32 +181,30 @@ class PostgresUserRepository(UserRepository):
                 yield conn
             return
 
-        # vault mode: user-mcp authenticates to Vault with its own SPIFFE
-        # JWT-SVID (workload identity) — but only on behalf of a request that
-        # carried a real, validated human user. Without that, user-mcp must
-        # never be able to mint Vault-backed database credentials for itself:
-        # a request with a technically-valid scope but no attached user (e.g.
-        # a service/client-credentials token) is refused here, before the
-        # SPIFFE identity is even fetched.
+        # vault mode: the caller's own validated Keycloak access token is
+        # presented directly to Vault (Vault's native Agentic IAM — see
+        # docker-compose/templates/vault-setup.sh). user-mcp must never be
+        # able to mint Vault-backed database credentials on behalf of a
+        # request with no attached user: a request with a technically-valid
+        # scope but no user (e.g. a service/client-credentials token) is
+        # refused here, before Vault is ever called.
         user = current_obo_user.get(None)
-        if not user:
+        token = current_obo_token.get(None)
+        if not user or not token:
             raise AppError(
                 401,
                 "invalid_request",
-                "A validated user is required to obtain database credentials "
-                "in vault mode; user-mcp will not authenticate to Vault on "
-                "behalf of a request with no attached user.",
+                "A validated user token is required to obtain database "
+                "credentials in vault mode; user-mcp will not present a "
+                "request with no attached user/token to Vault.",
             )
 
         scope = current_obo_scope.get(None) or ""
-        jwt_role, db_creds_path = self._select_vault_targets(scope)
+        ceiling_policy, db_creds_path = self._select_vault_targets(scope)
 
         assert self._vault is not None
-        assert self._spiffe is not None
-        svid = await self._spiffe.get_jwt_svid()
-        bind_log_context(workload_spiffe_id=svid.spiffe_id, vault_auth_mode="spiffe")
-        client_token = await self._vault.login_with_jwt(svid.token, jwt_role)
-        creds = await self._vault.read_database_creds(client_token, db_creds_path)
+        bind_log_context(vault_auth_mode="oauth-resource-server")
+        creds = await self._vault.read_database_creds(token, db_creds_path)
 
         try:
             conn = await asyncpg.connect(
@@ -241,11 +232,11 @@ class PostgresUserRepository(UserRepository):
         log_event(
             LOGGER,
             "db_call",
-            level=logging.DEBUG,
+            level=logging.INFO,
             message="Postgres connection ready (vault mode)",
             auth_mode="vault",
             db_username=creds.username,
-            vault_role=jwt_role,
+            vault_ceiling_policy=ceiling_policy,
             db_creds_path=db_creds_path,
             lease_id=creds.lease_id,
             lease_duration=creds.lease_duration,
@@ -258,9 +249,9 @@ class PostgresUserRepository(UserRepository):
     def _select_vault_targets(self, scope: str) -> tuple[str, str]:
         scopes = {part for part in scope.split() if part}
         if _SCOPE_WRITE in scopes:
-            return self._jwt_write_role, self._db_write_path
+            return self._ceiling_policy_write, self._db_write_path
         if _SCOPE_READ in scopes:
-            return self._jwt_read_role, self._db_read_path
+            return self._ceiling_policy_read, self._db_read_path
         raise AppError(
             403,
             "invalid_request",

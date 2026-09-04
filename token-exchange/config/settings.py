@@ -32,9 +32,6 @@ class Settings(BaseSettings):
     obo_client_secret: str = ""
     # RFC 8693 ``audience`` parameter: the resource server the exchanged token is for.
     keycloak_token_exchange_audience: str = "user-mcp"
-    # Keycloak group names that entitle each scope (``groups`` claim).
-    admin_group: str = "writers"
-    readonly_group: str = "readers"
 
     cache_ttl: int = 3600       # seconds; also the TTLCache eviction window
     cache_maxsize: int = 1024   # max number of cached tokens

@@ -48,14 +48,37 @@
         "openid",
         "profile",
         "email",
-        "roles"
+        "roles",
+        "basic"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:8080/",
-        "token.exchange.grant.enabled": "true"
+        "token.exchange.grant.enabled": "true",
+        "access.token.header.type.rfc9068": "true"
       },
       "protocolMappers": [
+        {
+          "name": "vault-jwt-compat",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-vault-jwt-compat-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "subject",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
         {
           "name": "aud-token-exchange",
           "protocol": "openid-connect",
@@ -98,10 +121,13 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "fullScopeAllowed": false,
-      "defaultClientScopes": [],
+      "defaultClientScopes": [
+        "basic"
+      ],
       "attributes": {
         "token.exchange.grant.enabled": "true",
-        "standard.token.exchange.enabled": "true"
+        "standard.token.exchange.enabled": "true",
+        "access.token.header.type.rfc9068": "true"
       },
       "optionalClientScopes": [
         "users.read",
@@ -109,6 +135,91 @@
         "delegation"
       ],
       "protocolMappers": [
+        {
+          "name": "vault-jwt-compat",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-vault-jwt-compat-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "subject",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "user-mcp",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "introspection.token.claim": "true",
+            "add.to.lightweight.access.token": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "rar-cli",
+      "name": "rar-cli",
+      "description": "CLI client used to prove Keycloak RAR tokens against Vault (resource-owner password + PAR form param)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "rar-cli-secret",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "basic"
+      ],
+      "optionalClientScopes": [
+        "users.read",
+        "users.write"
+      ],
+      "attributes": {
+        "access.token.header.type.rfc9068": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "vault-jwt-compat",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-vault-jwt-compat-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "subject",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
         {
           "name": "aud-user-mcp",
           "protocol": "openid-connect",
@@ -136,10 +247,73 @@
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": true,
       "fullScopeAllowed": true,
       "attributes": {
         "token.exchange.grant.enabled": "true"
+      },
+      "authorizationSettings": {
+        "allowRemoteResourceManagement": true,
+        "policyEnforcementMode": "ENFORCING",
+        "resources": [
+          {
+            "name": "database-creds-read",
+            "ownerManagedAccess": false,
+            "displayName": "Database creds (read role)",
+            "attributes": {},
+            "uris": ["/database/creds/user-mcp-read-role"]
+          },
+          {
+            "name": "database-creds-write",
+            "ownerManagedAccess": false,
+            "displayName": "Database creds (write role)",
+            "attributes": {},
+            "uris": ["/database/creds/user-mcp-write-role"]
+          }
+        ],
+        "policies": [
+          {
+            "name": "readers-group-policy",
+            "type": "group",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "groups": "[{\"path\":\"/readers\",\"extendChildren\":false}]"
+            }
+          },
+          {
+            "name": "writers-group-policy",
+            "type": "group",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "groups": "[{\"path\":\"/writers\",\"extendChildren\":false}]"
+            }
+          },
+          {
+            "name": "database-creds-read-permission",
+            "type": "resource",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "resources": "[\"database-creds-read\"]",
+              "applyPolicies": "[\"readers-group-policy\"]"
+            }
+          },
+          {
+            "name": "database-creds-write-permission",
+            "type": "resource",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "resources": "[\"database-creds-write\"]",
+              "applyPolicies": "[\"writers-group-policy\"]"
+            }
+          }
+        ],
+        "scopes": [],
+        "decisionStrategy": "UNANIMOUS"
       }
     }
   ],

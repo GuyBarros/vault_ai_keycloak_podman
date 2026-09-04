@@ -64,16 +64,17 @@ class Settings(BaseSettings):
     vault_addr: str = Field(default="", alias="USER_MCP_VAULT_ADDR")
     vault_namespace: str = Field(default="", alias="USER_MCP_VAULT_NAMESPACE")
 
-    # SPIFFE workload identity: user-mcp authenticates to Vault with a JWT-SVID
-    # fetched from the local SPIRE Workload API, not with the caller's OBO token.
-    spiffe_socket: str = Field(default="", alias="USER_MCP_SPIFFE_SOCKET")
-    spiffe_jwt_audience: str = Field(default="", alias="USER_MCP_SPIFFE_JWT_AUDIENCE")
-    vault_spiffe_jwt_path: str = Field(default="jwt-spiffe", alias="USER_MCP_VAULT_SPIFFE_JWT_PATH")
-    vault_spiffe_read_role: str = Field(
-        default="user-mcp-spiffe-read", alias="USER_MCP_VAULT_SPIFFE_READ_ROLE"
+    # Vault's native Agentic IAM (Agent Registry + OAuth Resource Server, see
+    # docker-compose/templates/vault-setup.sh) validates the caller's own
+    # Keycloak access token directly — no separate login step or workload
+    # identity needed. These two names are purely descriptive (for logging /
+    # Grafana visibility): they're the Agent Registry ceiling policy that
+    # actually governs each path, enforced by Vault itself.
+    vault_ceiling_policy_read: str = Field(
+        default="user-mcp-agentic-read", alias="USER_MCP_VAULT_CEILING_POLICY_READ"
     )
-    vault_spiffe_write_role: str = Field(
-        default="user-mcp-spiffe-write", alias="USER_MCP_VAULT_SPIFFE_WRITE_ROLE"
+    vault_ceiling_policy_write: str = Field(
+        default="user-mcp-agentic-write", alias="USER_MCP_VAULT_CEILING_POLICY_WRITE"
     )
     vault_db_read_path: str = Field(
         default="database/creds/user-mcp-read-role",
@@ -115,11 +116,12 @@ class Settings(BaseSettings):
 def _validate_compatibility(settings: Settings) -> None:
     """Catch deploy-time misconfigurations before the first request hits.
 
-    Vault-mode DB credentials authenticate to Vault with user-mcp's own SPIFFE
-    JWT-SVID (see storage/postgres_repo.py:_acquire), but still pick the
-    read/write Vault role from the caller's validated OIDC scope. Bypass mode
-    discards the Authorization header entirely (see auth/jwt_validator.py:
-    bypass branch), so scope is always empty and role selection always fails —
+    Vault-mode DB credentials authenticate to Vault by presenting the
+    caller's own validated Keycloak access token directly (Vault's native
+    Agentic IAM — see storage/postgres_repo.py:_acquire), and pick the
+    read/write path from that same token's OIDC scope. Bypass mode discards
+    the Authorization header entirely (see auth/jwt_validator.py: bypass
+    branch), so there's no token to present and no scope to select a path —
     the two together produce a service that always 500s on tools/call.
     """
     if (
@@ -132,9 +134,9 @@ def _validate_compatibility(settings: Settings) -> None:
             "configuration_error",
             "USER_MCP_BYPASS_AUTH=true is incompatible with "
             "USER_MCP_DB_AUTH_MODE=vault: vault mode requires a validated "
-            "user scope on every tool call to select the Vault role, but "
-            "bypass mode discards the Authorization header. Set "
-            "USER_MCP_BYPASS_AUTH=false (rely on "
+            "user token on every tool call to present to Vault and select "
+            "the DB-creds path, but bypass mode discards the Authorization "
+            "header. Set USER_MCP_BYPASS_AUTH=false (rely on "
             "USER_MCP_ALLOW_UNAUTH_DISCOVERY=true for ai-agent's startup "
             "tools/list) or set USER_MCP_DB_AUTH_MODE=direct.",
         )

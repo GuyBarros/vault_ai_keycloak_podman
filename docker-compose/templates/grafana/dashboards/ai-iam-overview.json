@@ -26,7 +26,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Number of SPIFFE logins (user-mcp's own workload identity, shared with ai-agent's periodic renewals) against the jwt-spiffe mount in the last 5 minutes. Each user-mcp login roughly tracks a tool call needing DB credentials.",
+      "description": "Number of Vault Agentic IAM validations (Agent Registry + OAuth Resource Server — the user's own Keycloak token presented directly to Vault, see vault-setup.sh) in the last 5 minutes. Each one roughly tracks a user-mcp tool call needing DB credentials or Transform masking.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -43,7 +43,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto", "orientation": "auto" },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "ceil(increase(vault_route_create_auth_jwt_spiffe__count[5m]))",
+        "expr": "ceil(increase(vault_agent_registry_registration_lookup_count[5m]))",
         "legendFormat": "Logins (5 m)"
       }],
       "title": "User Logins (5 m)",
@@ -52,7 +52,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Cumulative SPIFFE logins since stack start (user-mcp workload identity + ai-agent renewals).",
+      "description": "Cumulative Vault Agentic IAM validations since stack start (user-mcp's DB-creds/Transform calls via the OAuth Resource Server + Agent Registry).",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -66,10 +66,10 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "vault_route_create_auth_jwt_spiffe__count",
+        "expr": "vault_agent_registry_registration_lookup_count",
         "legendFormat": "Total logins"
       }],
-      "title": "Total User Logins",
+      "title": "Total Agentic IAM Logins",
       "type": "stat"
     },
 
@@ -128,7 +128,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Rate of user-mcp/ai-agent SPIFFE logins per minute over time — shows activity spikes driven by web app usage.",
+      "description": "Rate of user-mcp Vault Agentic IAM validations per minute over time — shows activity spikes driven by web app usage.",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -142,8 +142,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
-          "legendFormat": "SPIFFE logins/s"
+          "expr": "rate(vault_agent_registry_registration_lookup_count[2m])",
+          "legendFormat": "Agentic IAM validations/s"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -317,7 +317,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "SPIFFE logins (jwt-spiffe mount) = vault-agent/ai-agent renewing its SVID, plus user-mcp authenticating with its own JWT-SVID on every DB-backed tool call. Vault's route metrics aggregate by mount, not caller, so this series can't distinguish the two by itself — see the Session Audit dashboard's SPIFFE logs panel for a per-caller breakdown.",
+      "description": "SPIFFE logins (jwt-spiffe mount) = vault-agent/ai-agent authenticating via SVID. A sustained rate means the agent is alive and renewing its SPIFFE credential. user-mcp's own Vault access no longer uses SPIFFE — see \"Total Agentic IAM Logins\" for that.",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -332,7 +332,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
-          "legendFormat": "SPIFFE logins/s (new)"
+          "legendFormat": "SPIFFE logins/s"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -346,7 +346,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Cumulative SPIFFE logins and renewals since stack start — vault-agent/ai-agent plus user-mcp's own per-tool-call workload logins. A non-zero value confirms at least one SVID-based Vault login has occurred.",
+      "description": "Cumulative SPIFFE logins and renewals since stack start. A non-zero value confirms vault-agent has authenticated at least once via its SVID.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -556,7 +556,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "OBO + SPIFFE flow activity: DB credential issuances (= user-mcp tool calls needing DB), SPIFFE workload logins (user-mcp's own Vault auth, shared with ai-agent's periodic renewals), and PII transform calls. Each point in time shows which types of operations were occurring.",
+      "description": "OBO + Agentic IAM flow activity: DB credential issuances (= user-mcp tool calls needing DB), Vault Agentic IAM validations (user-mcp's own Vault access via the OAuth Resource Server + Agent Registry), and PII transform calls. Each point in time shows which types of operations were occurring.",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -575,8 +575,8 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
-          "legendFormat": "SPIFFE logins/s (user-mcp DB-cred + ai-agent)"
+          "expr": "rate(vault_agent_registry_registration_lookup_count[2m])",
+          "legendFormat": "Agentic IAM validations/s (user-mcp)"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -616,7 +616,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Vault request latency on the routes most relevant to the OBO and credential flow: database reads (credential fetch), identity reads (actor token), and jwt-spiffe logins (user-mcp workload auth).",
+      "description": "Vault request latency on the routes most relevant to the OBO and credential flow: database reads (credential fetch), identity reads (actor token), and Agentic IAM validations (user-mcp's own Vault access).",
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -639,8 +639,8 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, rate(vault_route_create_auth_jwt_spiffe__bucket[5m]))",
-          "legendFormat": "p95 SPIFFE login"
+          "expr": "vault_agent_registry_registration_lookup{quantile=\"0.99\"}",
+          "legendFormat": "p99 Agentic IAM validation"
         }
       ],
       "title": "OBO & Credential Path Latency (p95)",

@@ -81,7 +81,7 @@ class OBOBroker:
             :class:`OBOTokenResult` with the access token and cache flag.
 
         Raises:
-            OBOAuthorizationError:  Caller's groups don't entitle the requested scope.
+            OBOAuthorizationError:  Keycloak's PDP doesn't grant the requested scope.
             OBOAuthenticationError: Entra rejected the request.
             OBORequestError:        Entra could not complete the exchange.
             CacheError:                 Unexpected cache failure.

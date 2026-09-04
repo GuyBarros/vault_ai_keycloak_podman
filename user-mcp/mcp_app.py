@@ -13,7 +13,6 @@ from storage.base import UserRepository
 from tools import register_tools
 from vault_client import VaultClient
 from vault_transform import TransformMasker
-from spiffe_client import SpiffeSvidProvider
 
 LOGGER = logging.getLogger("user_mcp.mcp_app")
 
@@ -50,7 +49,6 @@ def build_mcp_app(settings: Settings) -> tuple[FastMCP, UserRepository]:
         settings.transform_enabled
         and settings.db_auth_mode == "vault"
         and settings.transform_role
-        and settings.spiffe_socket
     ):
         vault_tls_verify: bool | str = (
             settings.vault_ca_bundle.strip() or settings.vault_verify_tls
@@ -58,16 +56,10 @@ def build_mcp_app(settings: Settings) -> tuple[FastMCP, UserRepository]:
         masker = TransformMasker(
             vault=VaultClient(
                 addr=settings.vault_addr,
-                jwt_path=settings.vault_spiffe_jwt_path,
                 namespace=settings.vault_namespace or None,
                 verify_tls=vault_tls_verify,
                 timeout_seconds=settings.vault_request_timeout_seconds,
             ),
-            spiffe=SpiffeSvidProvider(
-                socket_path=settings.spiffe_socket,
-                audience=settings.spiffe_jwt_audience,
-            ),
-            jwt_role=settings.vault_spiffe_read_role,
             transform_role=settings.transform_role,
         )
 
