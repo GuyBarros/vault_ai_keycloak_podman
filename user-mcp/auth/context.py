@@ -33,29 +33,44 @@ current_obo_token: ContextVar[Optional[str]] = ContextVar(
     "current_obo_token", default=None
 )
 
+# The agent_id from the OBO token's may_act.preferred_username claim.
+# Keycloak's delegation scope maps the acting service's username here.
+current_agent_id: ContextVar[Optional[str]] = ContextVar(
+    "current_agent_id", default=None
+)
+
+# The MCP tool name currently being executed. Set by tools/users.py before
+# each tool body runs so postgres_repo can include it in Vault user_metadata.
+current_tool_name: ContextVar[Optional[str]] = ContextVar(
+    "current_tool_name", default=None
+)
+
 
 def bind_request_identity(
     scope: str | None,
     user: str | None = None,
     groups: tuple[str, ...] | None = None,
     token: str | None = None,
-) -> tuple[Token[Any], Token[Any], Token[Any], Token[Any]]:
+    agent_id: str | None = None,
+) -> tuple[Token[Any], Token[Any], Token[Any], Token[Any], Token[Any]]:
     return (
         current_obo_scope.set(scope),
         current_obo_user.set(user),
         current_obo_groups.set(groups or ()),
         current_obo_token.set(token),
+        current_agent_id.set(agent_id),
     )
 
 
 def reset_request_identity(
-    tokens: tuple[Token[Any], Token[Any], Token[Any], Token[Any]],
+    tokens: tuple[Token[Any], Token[Any], Token[Any], Token[Any], Token[Any]],
 ) -> None:
-    scope_token, user_token, groups_token, token_token = tokens
+    scope_token, user_token, groups_token, token_token, agent_token = tokens
     current_obo_groups.reset(groups_token)
     current_obo_user.reset(user_token)
     current_obo_scope.reset(scope_token)
     current_obo_token.reset(token_token)
+    current_agent_id.reset(agent_token)
 
 
 def caller_is_admin() -> bool:

@@ -58,9 +58,23 @@ class VaultClient:
             headers["X-Vault-Token"] = client_token
         return headers
 
-    async def login_with_jwt(self, jwt_token: str, role: str) -> str:
+    async def login_with_jwt(
+        self,
+        jwt_token: str,
+        role: str,
+        user_metadata: dict[str, str] | None = None,
+    ) -> str:
+        """Login to Vault using a JWT token and return the client token.
+
+        user_metadata is forwarded in the login payload so Vault stores it on
+        the resulting entity alias — it appears in audit logs and token metadata
+        as auth.metadata.* fields, giving full attribution of which agent and
+        tool triggered each credential issuance.
+        """
         url = f"{self._addr}/v1/auth/{self._jwt_path}/login"
-        payload = {"role": role, "jwt": jwt_token}
+        payload: dict = {"role": role, "jwt": jwt_token}
+        if user_metadata:
+            payload["user_metadata"] = user_metadata
         try:
             async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
                 resp = await client.post(url, json=payload, headers=self._headers())

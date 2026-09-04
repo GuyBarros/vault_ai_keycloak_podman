@@ -6,7 +6,13 @@ from typing import Any, AsyncIterator
 
 import asyncpg
 
-from auth.context import current_obo_scope, current_obo_token, current_obo_user
+from auth.context import (
+    current_agent_id,
+    current_obo_scope,
+    current_obo_token,
+    current_obo_user,
+    current_tool_name,
+)
 from errors import AppError
 from logging_utils import bind_log_context, log_event
 from models import UserRecord
@@ -207,7 +213,16 @@ class PostgresUserRepository(UserRepository):
 
         assert self._vault is not None
         bind_log_context(vault_auth_mode="keycloak_obo")
-        client_token = await self._vault.login_with_jwt(obo_token, jwt_role)
+        user_metadata: dict[str, str] = {}
+        agent = current_agent_id.get(None)
+        tool = current_tool_name.get(None)
+        if agent:
+            user_metadata["agent_id"] = agent
+        if tool:
+            user_metadata["tool"] = tool
+        client_token = await self._vault.login_with_jwt(
+            obo_token, jwt_role, user_metadata=user_metadata or None
+        )
         creds = await self._vault.read_database_creds(client_token, db_creds_path)
 
         try:
