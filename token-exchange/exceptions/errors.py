@@ -27,4 +27,4 @@ class OBORequestError(OBOExchangeError):
 
 
 class OBOAuthorizationError(OBOExchangeError):
-    """Raised when the subject_token's groups don't entitle the requested scope."""
+    """Raised when Keycloak's PDP (Authorization Services) doesn't grant the requested scope."""

@@ -20,20 +20,23 @@ class DynamicDbCredentials:
 
 
 class VaultClient:
-    """Thin async Vault client for the JWT login + database creds flow.
+    """Thin async Vault client for the OAuth-JWT-as-token flow.
 
-    Authenticates to Vault with a SPIFFE JWT-SVID (this workload's own
-    identity, fetched from the local SPIRE Workload API — see
-    spiffe_client.py) to obtain a short-lived Vault client token, then reads
-    dynamic Postgres credentials from the database secrets engine using that
-    token. Which Vault role to request (read vs. write) is still selected by
-    the caller from the human user's validated OIDC scope.
+    Vault's native Agentic IAM (OAuth Resource Server + Agent Registry, see
+    docker-compose/templates/vault-setup.sh) validates the caller's own
+    Keycloak-issued OAuth access token inline on every request — there is no
+    separate login/exchange call. That access token is presented directly as
+    the Vault token (X-Vault-Token) to read dynamic Postgres credentials or
+    call Vault Transform. Which Vault path to request (read vs. write role)
+    is selected by the caller from the human user's validated OIDC scope;
+    Vault independently caps what that token can actually do via the
+    entity's baseline ACL policies intersected with its Agent Registry
+    ceiling policy.
     """
 
     def __init__(
         self,
         addr: str,
-        jwt_path: str,
         namespace: str | None = None,
         verify_tls: bool | str = True,
         timeout_seconds: float = 10.0,
@@ -45,7 +48,6 @@ class VaultClient:
                 "USER_MCP_VAULT_ADDR is required when USER_MCP_DB_AUTH_MODE=vault.",
             )
         self._addr = addr.rstrip("/")
-        self._jwt_path = jwt_path.strip("/")
         self._namespace = namespace or None
         self._verify_tls = verify_tls
         self._timeout = httpx.Timeout(timeout_seconds)
@@ -57,45 +59,6 @@ class VaultClient:
         if client_token:
             headers["X-Vault-Token"] = client_token
         return headers
-
-    async def login_with_jwt(self, jwt_token: str, role: str) -> str:
-        url = f"{self._addr}/v1/auth/{self._jwt_path}/login"
-        payload = {"role": role, "jwt": jwt_token}
-        try:
-            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
-                resp = await client.post(url, json=payload, headers=self._headers())
-        except httpx.HTTPError as exc:
-            raise AppError(
-                502,
-                "agent_error",
-                f"Vault login failed (transport): {exc}",
-            ) from exc
-
-        if resp.status_code >= 400:
-            raise AppError(
-                _vault_status_to_app_status(resp.status_code),
-                _vault_status_to_app_error(resp.status_code),
-                f"Vault JWT login rejected (status={resp.status_code}): {_safe_error_body(resp)}",
-            )
-
-        body = resp.json()
-        auth = body.get("auth") or {}
-        client_token = auth.get("client_token")
-        if not client_token:
-            raise AppError(
-                502,
-                "agent_error",
-                "Vault login response did not include auth.client_token.",
-            )
-        log_event(
-            LOGGER,
-            "vault_login_ok",
-            level=logging.INFO,
-            message="Vault JWT login succeeded",
-            vault_role=role,
-            jwt_path=self._jwt_path,
-        )
-        return client_token
 
     async def transform_encode(
         self,

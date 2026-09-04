@@ -33,10 +33,12 @@ services:
       PROMETHEUS_ENABLED: "true"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 5
+      # litellm.env can take ~90 s to appear (vault-agent SPIRE bootstrap) plus
+      # prisma migrations before the server responds.  Give 3 minutes of grace.
+      start_period: 180s
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,7 +75,7 @@ services:
 
   vault:
     <<: *cpu
-    image: hashicorp/vault-enterprise:2.0.4-ent
+    image: hashicorp/vault-enterprise:2.1.0-ent
     container_name: vault
     ports:
       - "8200:8200"
@@ -295,17 +297,12 @@ services:
       dockerfile: Dockerfile
     image: user-mcp:local
     container_name: user-mcp
-    # Share the PID namespace with spire-agent so SO_PEERCRED on the Workload
-    # API socket returns a PID that spire-agent can resolve in /proc.
-    pid: "service:spire-agent"
     ports:
       - "8090:8090"
     env_file:
       - ./templates/user-mcp.env
     environment:
       LOKI_URL: "http://loki:3100"
-    volumes:
-      - spire-agent-socket:/tmp/spire-agent:ro
     depends_on:
       vault-setup:
         condition: service_completed_successfully
@@ -313,10 +310,6 @@ services:
         condition: service_completed_successfully
       keycloak:
         condition: service_healthy
-      spire-setup:
-        condition: service_completed_successfully
-      spire-agent:
-        condition: service_started
       loki:
         condition: service_started
     networks:

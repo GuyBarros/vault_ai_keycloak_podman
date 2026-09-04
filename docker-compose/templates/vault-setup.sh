@@ -72,53 +72,9 @@ vault write auth/jwt-spiffe/config \
   jwt_supported_algs="RS256,ES256,ES384,RS512,PS256,PS384,PS512"
 
 echo "vault-setup: jwt-spiffe config written (JWKS from proxy)."
-
-# Policy: spiffe workload gets DB read creds + transform encode
-vault policy write user-mcp-spiffe-read - <<'EOF'
-path "database/creds/user-mcp-read-role" {
-  capabilities = ["read"]
-}
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
-EOF
-
-vault policy write user-mcp-spiffe-write - <<'EOF'
-path "database/creds/user-mcp-write-role" {
-  capabilities = ["read"]
-}
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
-EOF
-
-# JWT roles bound to the user-mcp SPIFFE ID.
-# sub claim in a JWT-SVID is the SPIFFE ID URI.
-vault write auth/jwt-spiffe/role/user-mcp-spiffe-read - <<'EOF'
-{
-  "role_type": "jwt",
-  "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
-  "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["user-mcp-spiffe-read"],
-  "token_ttl": 300,
-  "token_max_ttl": 900,
-  "token_type": "service"
-}
-EOF
-
-vault write auth/jwt-spiffe/role/user-mcp-spiffe-write - <<'EOF'
-{
-  "role_type": "jwt",
-  "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
-  "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["user-mcp-spiffe-write"],
-  "token_ttl": 300,
-  "token_max_ttl": 900,
-  "token_type": "service"
-}
-EOF
+# NOTE: jwt-spiffe is used below only by ai-agent-spiffe (vault-agent's own
+# SPIFFE login). user-mcp's own Vault access no longer uses SPIFFE — see the
+# "Vault 2.1 native Agentic IAM" section near the end of this script.
 
 # Vault OIDC identity: issuer + role for the ai-agent ──
 vault write identity/oidc/config \
@@ -297,5 +253,130 @@ path "transform/encode/user-mcp-transform" {
   capabilities = ["create", "update"]
 }
 EOF
+
+# ── Vault 2.1 native Agentic IAM (Agent Registry + OAuth Resource Server) ────
+# Replaces the SPIFFE-workload-identity Vault login user-mcp previously used
+# for its own DB-credential and Transform calls. The human user's own
+# validated Keycloak access token is now presented directly as the Vault
+# token (X-Vault-Token) on every request: Vault validates it inline against
+# the OAuth Resource Server profile below (signature + issuer + audience via
+# Keycloak's JWKS), resolves an identity/entity via an entity-alias keyed on
+# (issuer, sub), and computes effective capabilities as that entity's own
+# baseline ACL policies intersected with its Agent Registry ceiling policy.
+# No login call, and no SPIFFE identity for user-mcp is needed for this flow.
+#
+# RAR (authorization_details / vault:path_access) IS used — see the
+# hardcoded-claim mappers on the users.read/users.write client scopes below
+# and token-exchange/verify/authorization.py (Keycloak Authorization Services
+# as the live PDP for which scope, and therefore which authorization_details,
+# a request is granted). optional_authorization_details=true is still set so
+# the baseline ∩ ceiling intersection alone still authorizes requests that
+# for any reason arrive without it — RAR here is additive, not required.
+#
+# NOTE: end-to-end validation is currently blocked by an unrelated Keycloak
+# issue — every Keycloak-issued access token carries a body `typ` claim
+# (Keycloak always sets it in TokenManager.initToken(), unconditionally,
+# before any mapper runs) that Vault's OAuth Resource Server schema
+# validation rejects outright, regardless of RAR. Confirmed on both Vault
+# 2.0.4 and 2.1.0 GA. The client attribute
+# "access.token.header.type.rfc9068" (set on the token-exchange client
+# below) fixes the JWT *header* typ to the RFC 9068-correct "at+jwt", but
+# does not remove the redundant body claim, so this alone doesn't unblock
+# Vault. No mapper (hardcoded-claim, script — unavailable in this Keycloak
+# build) can remove that body claim; only a custom Keycloak Java SPI
+# protocol mapper could.
+
+# oauth-resource-server required a one-time activation pre-2.1 (beta); as of
+# Vault 2.1 it's GA and the activation-flags entry is gone entirely — only
+# attempt activation if this Vault version still lists the flag at all.
+if vault read sys/activation-flags | grep -q "oauth-resource-server"; then
+  vault read sys/activation-flags | grep "^activated" | grep -q "oauth-resource-server" \
+    || vault write -f sys/activation-flags/oauth-resource-server/activate
+  echo "vault-setup: oauth-resource-server feature activated."
+else
+  echo "vault-setup: oauth-resource-server is GA on this Vault version, no activation needed."
+fi
+
+# Split-horizon issuer/JWKS, same pattern the old jwt-user-mcp mount used:
+# Vault fetches JWKS from the internal Docker address, but tokens carry
+# iss=http://localhost:8081/realms/demo.
+vault write sys/config/oauth-resource-server/keycloak-demo \
+  issuer_id="http://localhost:8081/realms/demo" \
+  use_jwks=true \
+  jwks_uri="http://keycloak:8080/realms/demo/protocol/openid-connect/certs" \
+  user_claim="sub" \
+  jwt_type="access_token" \
+  audiences="user-mcp" \
+  optional_authorization_details=true
+echo "vault-setup: oauth-resource-server profile 'keycloak-demo' configured."
+
+# Baseline/ceiling policies — same DB-creds + transform grants the old
+# user-mcp-spiffe-read/write policies gave, just under the new naming.
+vault policy write user-mcp-agentic-read - <<'EOF'
+path "database/creds/user-mcp-read-role" {
+  capabilities = ["read"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
+vault policy write user-mcp-agentic-write - <<'EOF'
+path "database/creds/user-mcp-write-role" {
+  capabilities = ["read"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
+# Look up the demo users' Keycloak ids (reuses the admin token already
+# obtained above for the ai-agent id patch). Their `sub` claim equals this id.
+echo "vault-setup: looking up demo user ids in Keycloak for agentic IAM entities..."
+KC_READER_USER_ID=$(wget -qO- \
+  --header="Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/users?username=user&exact=true" \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+KC_WRITER_USER_ID=$(wget -qO- \
+  --header="Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/users?username=admin&exact=true" \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+echo "vault-setup: keycloak user id (readers)=${KC_READER_USER_ID} admin id (readers+writers)=${KC_WRITER_USER_ID}"
+
+# One Vault entity per demo persona, with baseline ACL policies matching
+# their real Keycloak group (readers vs. readers+writers).
+vault write identity/entity name=demo-user policies="user-mcp-agentic-read"
+DEMO_USER_ENTITY_ID=$(vault read -field=id identity/entity/name/demo-user)
+
+vault write identity/entity name=demo-admin policies="user-mcp-agentic-read,user-mcp-agentic-write"
+DEMO_ADMIN_ENTITY_ID=$(vault read -field=id identity/entity/name/demo-admin)
+
+# Entity aliases bind each entity to its Keycloak identity via (issuer, sub).
+vault write identity/entity-alias \
+  name="demo-user-oauth" \
+  canonical_id="${DEMO_USER_ENTITY_ID}" \
+  issuer="http://localhost:8081/realms/demo" \
+  external_id="${KC_READER_USER_ID}"
+
+vault write identity/entity-alias \
+  name="demo-admin-oauth" \
+  canonical_id="${DEMO_ADMIN_ENTITY_ID}" \
+  issuer="http://localhost:8081/realms/demo" \
+  external_id="${KC_WRITER_USER_ID}"
+
+# Agent Registry ceiling policies — cap each entity to exactly the user-mcp
+# DB-creds/transform grant appropriate to their persona.
+vault write agent-registry/register \
+  display_name="demo-user" \
+  entity_id="${DEMO_USER_ENTITY_ID}" \
+  ceiling_policies='["user-mcp-agentic-read"]'
+
+vault write agent-registry/register \
+  display_name="demo-admin" \
+  entity_id="${DEMO_ADMIN_ENTITY_ID}" \
+  ceiling_policies='["user-mcp-agentic-read","user-mcp-agentic-write"]'
+
+echo "vault-setup: agentic IAM entities + agent registry registrations complete."
 
 echo "vault-setup: done."

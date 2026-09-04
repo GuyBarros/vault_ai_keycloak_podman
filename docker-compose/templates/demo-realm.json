@@ -101,7 +101,8 @@
       "defaultClientScopes": [],
       "attributes": {
         "token.exchange.grant.enabled": "true",
-        "standard.token.exchange.enabled": "true"
+        "standard.token.exchange.enabled": "true",
+        "access.token.header.type.rfc9068": "true"
       },
       "optionalClientScopes": [
         "users.read",
@@ -136,10 +137,73 @@
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": true,
       "fullScopeAllowed": true,
       "attributes": {
         "token.exchange.grant.enabled": "true"
+      },
+      "authorizationSettings": {
+        "allowRemoteResourceManagement": true,
+        "policyEnforcementMode": "ENFORCING",
+        "resources": [
+          {
+            "name": "database-creds-read",
+            "ownerManagedAccess": false,
+            "displayName": "Database creds (read role)",
+            "attributes": {},
+            "uris": ["/database/creds/user-mcp-read-role"]
+          },
+          {
+            "name": "database-creds-write",
+            "ownerManagedAccess": false,
+            "displayName": "Database creds (write role)",
+            "attributes": {},
+            "uris": ["/database/creds/user-mcp-write-role"]
+          }
+        ],
+        "policies": [
+          {
+            "name": "readers-group-policy",
+            "type": "group",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "groups": "[{\"path\":\"/readers\",\"extendChildren\":false}]"
+            }
+          },
+          {
+            "name": "writers-group-policy",
+            "type": "group",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "groups": "[{\"path\":\"/writers\",\"extendChildren\":false}]"
+            }
+          },
+          {
+            "name": "database-creds-read-permission",
+            "type": "resource",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "resources": "[\"database-creds-read\"]",
+              "applyPolicies": "[\"readers-group-policy\"]"
+            }
+          },
+          {
+            "name": "database-creds-write-permission",
+            "type": "resource",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "resources": "[\"database-creds-write\"]",
+              "applyPolicies": "[\"writers-group-policy\"]"
+            }
+          }
+        ],
+        "scopes": [],
+        "decisionStrategy": "UNANIMOUS"
       }
     }
   ],
@@ -356,6 +420,20 @@
             "claim.name": "groups",
             "jsonType.label": "String"
           }
+        },
+        {
+          "name": "authorization-details-read",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "authorization_details",
+            "claim.value": "[{\"type\": \"vault:path_access\", \"path\": \"database/creds/user-mcp-read-role\", \"capabilities\": [\"read\"]}]",
+            "jsonType.label": "JSON",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
         }
       ]
     },
@@ -411,6 +489,20 @@
             "userinfo.token.claim": "false",
             "claim.name": "groups",
             "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "authorization-details-write",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "authorization_details",
+            "claim.value": "[{\"type\": \"vault:path_access\", \"path\": \"database/creds/user-mcp-write-role\", \"capabilities\": [\"read\"]}]",
+            "jsonType.label": "JSON",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
           }
         }
       ]

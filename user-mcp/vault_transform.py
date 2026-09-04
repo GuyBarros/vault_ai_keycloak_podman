@@ -25,6 +25,8 @@ import asyncio
 import logging
 import re
 
+from auth.context import current_obo_token
+from errors import AppError
 from logging_utils import log_event
 from models import UserRecord
 from vault_client import VaultClient
@@ -171,24 +173,32 @@ async def mask_user_records(
 
 
 class TransformMasker:
-    """Masks UserRecord tool results via Vault Transform using this workload's SPIFFE identity."""
+    """Masks UserRecord tool results via Vault Transform.
+
+    Presents the caller's own validated Keycloak access token directly to
+    Vault (Vault's native Agentic IAM — see
+    docker-compose/templates/vault-setup.sh), same as the DB-credential flow.
+    """
 
     def __init__(
         self,
         vault: VaultClient,
-        spiffe,
-        jwt_role: str,
         transform_role: str,
     ):
         self._vault = vault
-        self._spiffe = spiffe
-        self._jwt_role = jwt_role
         self._transform_role = transform_role
 
     async def mask_result(self, result):
         """Mask a UserRecord or list[UserRecord]; other values pass through."""
-        svid = await self._spiffe.get_jwt_svid()
-        client_token = await self._vault.login_with_jwt(svid.token, self._jwt_role)
+        client_token = current_obo_token.get(None)
+        if not client_token:
+            raise AppError(
+                401,
+                "invalid_request",
+                "A validated user token is required for Vault Transform "
+                "masking; user-mcp will not present a request with no "
+                "attached token to Vault.",
+            )
         if isinstance(result, list) and result and isinstance(result[0], UserRecord):
             masked = await mask_user_records(
                 result, self._vault, client_token, self._transform_role

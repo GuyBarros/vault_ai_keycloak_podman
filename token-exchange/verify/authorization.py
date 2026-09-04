@@ -1,92 +1,127 @@
-"""Local authorization gate for Keycloak token exchange (RFC 8693).
+"""Keycloak Authorization Services (UMA) as the Policy Decision Point (PDP)
+for OBO scope grants.
 
-Reads group membership from the ``groups`` claim embedded in ``subject_token``
-— a flat string array populated by Keycloak's group membership protocol mapper.
-Raises :class:`OBOAuthorizationError` (mapped to HTTP 403 in the API layer) when
-the caller's groups do not entitle every requested scope. The check fails closed:
-missing/malformed claims and unknown scopes both deny.
+Replaces local groups-claim parsing with a live policy decision: the caller's
+own subject_token is presented to Keycloak's uma-ticket grant as the
+requesting-party token, and Keycloak evaluates its configured Resources /
+Policies / Permissions on the user-mcp client (see
+docker-compose/templates/demo-realm.json, or the equivalent live Admin
+Console config under Clients > user-mcp > Authorization) to decide which
+resources the caller may access. The scopes this service hands out
+(users.read / users.write) are only granted when the PDP's live decision
+covers the matching resource — group membership changes take effect
+immediately, with no redeploy of this service.
+
+Fails closed: any Keycloak error, missing/malformed response, or ungranted
+resource denies the scope.
 """
+from __future__ import annotations
+
+import requests
 import jwt
 
-from exceptions.errors import OBOAuthorizationError
 from config.settings import settings
+from exceptions.errors import OBOAuthorizationError, OBORequestError
+from app_logging.logger import get_logger
 
-# Scope → set of groups that satisfy it.  At least one group in the set
-# must appear in the ``groups`` claim for the scope to be granted.
-SCOPE_REQUIREMENTS: dict[str, frozenset[str]] = {
-    "users.read": frozenset({settings.readonly_group, settings.admin_group}),
-    "users.write": frozenset({settings.admin_group}),
-    "delegation:ai-agent": frozenset({settings.readonly_group, settings.admin_group}),
+logger = get_logger(__name__)
+
+_UMA_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:uma-ticket"
+
+# Scope this service can grant on an exchanged token -> the Keycloak UMA
+# resource name (Clients > user-mcp > Authorization > Resources) that must
+# appear in the PDP's decision for that scope to be authorized.
+_SCOPE_TO_RESOURCE: dict[str, str] = {
+    "users.read": "database-creds-read",
+    "users.write": "database-creds-write",
 }
 
 
-def _groups_from_token(token: str) -> list[str] | None:
-    """Return the ``groups`` claim from *token*.
+def _uma_ticket_url() -> str:
+    base = settings.keycloak_url.rstrip("/")
+    return f"{base}/realms/{settings.keycloak_realm}/protocol/openid-connect/token"
 
-    Keycloak populates a flat string array via the group membership mapper::
 
-        { "groups": ["/readers", "/writers", ...] }
+def fetch_granted_resources(subject_token: str) -> set[str]:
+    """Return the UMA resource names Keycloak's PDP grants to *subject_token*'s caller.
 
-    Returns ``None`` when the claim is absent or malformed.
+    Calls the uma-ticket grant against the ``user-mcp`` resource server,
+    presenting *subject_token* as the requesting-party token (Authorization
+    header) — Keycloak evaluates it as if that user were asking "what am I
+    allowed to do here" directly, with no impersonation involved.
     """
     try:
-        payload = jwt.decode(token, options={"verify_signature": False})
-    except Exception:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    groups = payload.get("groups")
-    if isinstance(groups, list) and all(isinstance(g, str) for g in groups):
-        return groups
-    return None
+        response = requests.post(
+            _uma_ticket_url(),
+            data={
+                "grant_type": _UMA_GRANT_TYPE,
+                "audience": settings.keycloak_token_exchange_audience,
+            },
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": f"Bearer {subject_token}",
+            },
+            timeout=10,
+        )
+    except requests.exceptions.RequestException as exc:
+        raise OBORequestError(
+            f"Network error contacting Keycloak PDP (UMA): {exc}"
+        ) from exc
 
+    if response.status_code == 403:
+        # Keycloak's standard response for "no permissions granted" — not a
+        # request failure, just an empty decision.
+        return set()
 
-def _claim_summary_from_token(token: str) -> dict[str, str | list[str] | int | None]:
-    """Return a small non-sensitive claim summary for debugging authorization failures."""
+    if not response.ok:
+        raise OBORequestError(
+            "Keycloak PDP (UMA) evaluation failed with HTTP "
+            f"{response.status_code}: {response.text[:300]}"
+        )
+
     try:
-        payload = jwt.decode(token, options={"verify_signature": False})
-    except Exception:
-        return {}
+        rpt = response.json().get("access_token")
+    except Exception as exc:
+        raise OBORequestError(f"Keycloak PDP (UMA) returned a non-JSON response: {exc}") from exc
 
-    if not isinstance(payload, dict):
-        return {}
+    if not rpt:
+        raise OBORequestError("Keycloak PDP (UMA) response did not include an access_token")
 
-    summary: dict[str, str | list[str] | int | None] = {}
-    for claim_name in ("azp", "aud", "scope", "sub", "preferred_username", "groups"):
-        value = payload.get(claim_name)
-        if isinstance(value, (str, int)):
-            summary[claim_name] = value
-        elif isinstance(value, list) and all(isinstance(item, str) for item in value):
-            summary[claim_name] = value
-    return summary
+    try:
+        claims = jwt.decode(rpt, options={"verify_signature": False})
+    except Exception as exc:
+        raise OBORequestError(f"Keycloak PDP (UMA) RPT could not be decoded: {exc}") from exc
+
+    permissions = (claims.get("authorization") or {}).get("permissions") or []
+    granted = {
+        p.get("rsname")
+        for p in permissions
+        if isinstance(p, dict) and p.get("rsname")
+    }
+    logger.info("pdp_decision", granted_resources=sorted(granted))
+    return granted
 
 
 def authorize_scope(subject_token: str, scope: str) -> None:
-    """Raise :class:`OBOAuthorizationError` if *subject_token*'s groups don't entitle *scope*.
+    """Raise :class:`OBOAuthorizationError` unless Keycloak's PDP grants every
+    requested scope that this service governs.
 
-    *scope* is the space-separated string from the request. Every scope token
-    must be present in :data:`SCOPE_REQUIREMENTS` and at least one of the user's
-    groups must satisfy each scope's required-groups set.
+    *scope* is the space-separated string from the request. Scopes this
+    module doesn't govern (e.g. ``delegation:ai-agent``) pass through
+    untouched — they're authorized by Keycloak's own client-scope consent,
+    not by this PDP check.
     """
-    groups = _groups_from_token(subject_token)
-    if not groups:
-        claim_summary = _claim_summary_from_token(subject_token)
-        raise OBOAuthorizationError(
-            "subject_token missing or malformed 'groups' claim; "
-            f"claims_present={sorted(claim_summary.keys())}; "
-            f"claim_summary={claim_summary}"
-        )
-
-    user_groups = set(groups)
     requested = [s for s in scope.split() if s]
-    for requested_scope in requested:
-        required = SCOPE_REQUIREMENTS.get(requested_scope)
-        if required is None:
+    governed = [s for s in requested if s in _SCOPE_TO_RESOURCE]
+    if not governed:
+        return
+
+    granted_resources = fetch_granted_resources(subject_token)
+
+    for requested_scope in governed:
+        resource = _SCOPE_TO_RESOURCE[requested_scope]
+        if resource not in granted_resources:
             raise OBOAuthorizationError(
-                f"scope '{requested_scope}' is not permitted by policy"
-            )
-        if user_groups.isdisjoint(required):
-            raise OBOAuthorizationError(
-                f"user groups {sorted(user_groups)} are not authorized for scope "
-                f"'{requested_scope}' (requires one of {sorted(required)})"
+                f"Keycloak PDP denied scope '{requested_scope}': resource "
+                f"'{resource}' not granted (granted={sorted(granted_resources)})"
             )

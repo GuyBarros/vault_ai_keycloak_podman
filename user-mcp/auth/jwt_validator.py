@@ -209,6 +209,7 @@ class JwtAuthMiddleware:
         await self._dispatch_with_context(
             scope, receive, send, identity, request_id,
             verified_user=identity.get("preferred_username"),
+            verified_token=token,
         )
 
     async def _dispatch_with_context(
@@ -219,16 +220,19 @@ class JwtAuthMiddleware:
         identity: dict[str, Any],
         request_id: str,
         verified_user: str | None = None,
+        verified_token: str | None = None,
     ) -> None:
         """Run the wrapped app with request-scoped log context and identity bound.
 
-        `verified_user` is deliberately NOT derived from `identity` here — it
-        must only ever be a `preferred_username` that came off a signature-
-        and claims-validated Bearer token. The bypass-auth and anonymous-
-        discovery call sites both omit it (leaving it None), so
-        `current_obo_user` (auth/context.py) can be trusted downstream as
-        "a real user was authenticated for this request" — Vault-mode
-        credential issuance depends on that being true.
+        `verified_user` / `verified_token` are deliberately NOT derived from
+        `identity` here — they must only ever come off a signature- and
+        claims-validated Bearer token. The bypass-auth and anonymous-
+        discovery call sites both omit them (leaving them None), so
+        `current_obo_user` / `current_obo_token` (auth/context.py) can be
+        trusted downstream as "a real user was authenticated for this
+        request". Vault-mode credential issuance depends on that being true —
+        under Vault's native Agentic IAM, `current_obo_token` is presented
+        directly to Vault as the caller's own credential.
         """
         log_token = bind_log_context(
             request_id=request_id,
@@ -239,6 +243,7 @@ class JwtAuthMiddleware:
         identity_token = bind_request_identity(
             scope=identity.get("scope"),
             user=verified_user,
+            token=verified_token,
             groups=identity.get("groups") or (),
         )
         try:
