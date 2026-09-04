@@ -44,6 +44,10 @@ services:
         condition: service_completed_successfully
       vault:
         condition: service_healthy
+      # vault-setup must complete before vault-agent can render litellm.env —
+      # the litellm/config KV secret does not exist until vault-setup finishes.
+      vault-setup:
+        condition: service_completed_successfully
       vault-agent:
         condition: service_started
     networks:

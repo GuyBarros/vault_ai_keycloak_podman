@@ -5,7 +5,7 @@ import logging
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from auth.context import caller_is_admin
+from auth.context import caller_is_admin, current_tool_name
 from auth.scope_check import get_required_scopes, register_tool_scopes, require_scopes
 from errors import AppError
 from logging_utils import log_event
@@ -146,6 +146,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
 
 
 async def _run_tool(tool_name, action, result_summary, masker=None):
+    token = current_tool_name.set(tool_name)
     try:
         require_scopes(tool_name)
         result = await action()
@@ -174,13 +175,15 @@ async def _run_tool(tool_name, action, result_summary, masker=None):
         )
         raise ToolError(f"{tool_name} failed: {exc}") from exc
 
+    finally:
+        current_tool_name.reset(token)
     summary = result_summary(result) if result_summary else {}
     log_event(
         LOGGER,
         "tool_invoked",
         message=f"{tool_name} invoked",
         tool=tool_name,
-        required_scopes=sorted(get_required_scopes(tool_name)),
+        required_scopes=" ".join(sorted(get_required_scopes(tool_name))),
         **summary,
     )
     return result

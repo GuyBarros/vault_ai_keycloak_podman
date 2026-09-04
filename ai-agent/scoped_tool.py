@@ -37,7 +37,7 @@ def make_scoped_tool(
     name = template_tool.name
     description = template_tool.description
     args_schema = getattr(template_tool, "args_schema", None)
-    scopes_label = sorted(required_scopes)
+    scopes_label = " ".join(sorted(required_scopes))
 
     async def _coroutine(**kwargs: Any) -> Any:
         try:

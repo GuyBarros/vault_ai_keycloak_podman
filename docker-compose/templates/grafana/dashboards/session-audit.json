@@ -338,7 +338,7 @@
 
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "Every dynamic Postgres credential issued or used. The db_username is the ephemeral role created by Vault for this specific request. lease_id identifies the Vault lease — use it to trace back to the tool call via request_id.",
+      "description": "Every dynamic Postgres credential issued. The db_username is the ephemeral Postgres role created by Vault for this request. lease_id and lease_duration identify the Vault lease — use request_id to correlate with the tool call above.",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 35 },
       "id": 41,
       "options": {
@@ -354,12 +354,12 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\"} | json | event=\"tool_invoked\" | db_username!=\"\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}] db_user={{.db_username}} path={{.db_creds_path}} lease={{.lease_id}} ttl={{.lease_duration}}s spiffe_id={{.workload_spiffe_id}} request_id={{.request_id}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"db_call\" | vault_auth_mode=\"keycloak_obo\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] db_user={{.db_username}} path={{.db_creds_path}} lease={{.lease_id}} ttl={{.lease_duration}}s tool={{.tool}} request_id={{.request_id}}\"",
           "legendFormat": ""
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s spiffe_id={{.workload_spiffe_id}} request_id={{.request_id}}\"",
+          "expr": "{container=\"user-mcp\"} | json | event=\"vault_db_creds_issued\" | preferred_username=~\"$user\" | line_format \"[vault-issued] path={{.creds_path}} ttl={{.lease_duration}}s request_id={{.request_id}}\"",
           "legendFormat": ""
         }
       ],
@@ -369,7 +369,7 @@
 
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "description": "user-mcp authenticating to Vault with its own SPIFFE JWT-SVID (workload identity) to mint the DB credentials above. Threads the full chain: which user, through which agent, with what scope, resolved to which SPIFFE workload and Vault role.",
+      "description": "user-mcp authenticating to Vault via the jwt-keycloak mount using the caller's OBO token. Includes agent_id (from may_act.preferred_username) and the MCP tool name stored as Vault user_metadata — surfaces the full chain: user → agent → tool → Vault role.",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 45 },
       "id": 42,
       "options": {
@@ -384,10 +384,10 @@
       },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "{container=\"user-mcp\"} | json | event=\"vault_login_ok\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] scope={{.auth_scope}} spiffe_id={{.workload_spiffe_id}} vault_role={{.vault_role}} request_id={{.request_id}}\"",
+        "expr": "{container=\"user-mcp\"} | json | event=\"vault_login_ok\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] scope={{.auth_scope}} tool={{.tool}} vault_role={{.vault_role}} jwt_path={{.jwt_path}} request_id={{.request_id}}\"",
         "legendFormat": ""
       }],
-      "title": "SPIFFE Vault Logins (user → agent → workload → role)",
+      "title": "OBO Vault Logins (user → agent → tool → role)",
       "type": "logs"
     },
 

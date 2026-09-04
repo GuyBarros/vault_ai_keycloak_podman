@@ -52,7 +52,8 @@ vault write database/roles/user-mcp-write-role \
 
 # ── JWT auth backend for user-mcp SPIFFE workload identity ───────────────────
 # SPIRE's JWKS endpoint is used so Vault can verify JWT-SVIDs issued by SPIRE.
-# The bound_subject enforces exactly the user-mcp SPIFFE ID.
+# Only the TransformMasker (PII masking) still authenticates via SPIFFE.
+# Database credentials are now obtained via the jwt-keycloak mount below.
 vault auth list | grep -q "^jwt-spiffe/" || \
   vault auth enable -path=jwt-spiffe jwt
 
@@ -64,56 +65,102 @@ done
 echo "vault-setup: JWKS proxy is up."
 
 # Configure the JWT auth mount to fetch JWKS from the persistent proxy.
-# The proxy strips SPIRE-specific fields that cause Vault's parser to fail.
 # No bound_issuer — SPIRE JWT-SVIDs do not include an iss claim by default.
-# We enforce identity through bound_subject (the SPIFFE ID) in each role.
 vault write auth/jwt-spiffe/config \
   jwks_url="http://jwks-proxy:19876" \
   jwt_supported_algs="RS256,ES256,ES384,RS512,PS256,PS384,PS512"
 
 echo "vault-setup: jwt-spiffe config written (JWKS from proxy)."
 
-# Policy: spiffe workload gets DB read creds + transform encode
-vault policy write user-mcp-spiffe-read - <<'EOF'
-path "database/creds/user-mcp-read-role" {
-  capabilities = ["read"]
-}
+# Policy: SPIFFE workload gets transform encode only (DB creds moved to jwt-keycloak).
+vault policy write user-mcp-spiffe-transform - <<'EOF'
 path "transform/encode/user-mcp-transform" {
   capabilities = ["create", "update"]
 }
 EOF
 
-vault policy write user-mcp-spiffe-write - <<'EOF'
-path "database/creds/user-mcp-write-role" {
-  capabilities = ["read"]
-}
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
-EOF
-
-# JWT roles bound to the user-mcp SPIFFE ID.
-# sub claim in a JWT-SVID is the SPIFFE ID URI.
-vault write auth/jwt-spiffe/role/user-mcp-spiffe-read - <<'EOF'
+# JWT role bound to the user-mcp SPIFFE ID — transform only.
+vault write auth/jwt-spiffe/role/user-mcp-spiffe-transform - <<'EOF'
 {
   "role_type": "jwt",
   "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
+  "bound_audiences": ["user_mcp"],
   "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["user-mcp-spiffe-read"],
+  "bound_claims": {
+    "sub": "spiffe://example.org/user-mcp"
+  },
+  "token_policies": ["user-mcp-spiffe-transform"],
   "token_ttl": 300,
   "token_max_ttl": 900,
   "token_type": "service"
 }
 EOF
 
-vault write auth/jwt-spiffe/role/user-mcp-spiffe-write - <<'EOF'
+# ── JWT auth backend for user-mcp OBO token (Keycloak-issued) ────────────────
+# user-mcp authenticates to Vault with the caller's Keycloak OBO token
+# (audience=user-mcp) to obtain short-lived database credentials.
+# bound_claims enforce that the token was issued for the user-mcp audience,
+# by the token-exchange client (azp), and carries the expected scope.
+vault auth list | grep -q "^jwt-keycloak/" || \
+  vault auth enable -path=jwt-keycloak jwt
+
+vault write auth/jwt-keycloak/config \
+  jwks_url="http://keycloak:8080/realms/demo/protocol/openid-connect/certs" \
+  bound_issuer="http://localhost:8081/realms/demo" \
+  jwt_supported_algs="RS256"
+
+echo "vault-setup: jwt-keycloak config written (JWKS from Keycloak)."
+
+# Policy: OBO-authenticated token gets DB read creds.
+vault policy write user-mcp-obo-read - <<'EOF'
+path "database/creds/user-mcp-read-role" {
+  capabilities = ["read"]
+}
+EOF
+
+# Policy: OBO-authenticated token gets DB write creds.
+vault policy write user-mcp-obo-write - <<'EOF'
+path "database/creds/user-mcp-write-role" {
+  capabilities = ["read"]
+}
+EOF
+
+# Role for OBO tokens that carry users.read scope.
+# bound_claims enforce:
+#   - aud contains "user-mcp"        (token was issued for this service)
+#   - azp is "token-exchange"        (token was issued by the exchange client)
+#   - scope contains "users.read"    (caller holds read entitlement)
+# The scope claim is a space-separated string (e.g. "delegation:ai-agent users.read"),
+# so a glob wildcard prefix/suffix is required for substring matching.
+vault write auth/jwt-keycloak/role/user-mcp-obo-read - <<'EOF'
 {
   "role_type": "jwt",
-  "user_claim": "sub",
-  "bound_audiences": ["TESTING"],
-  "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["user-mcp-spiffe-write"],
+  "user_claim": "preferred_username",
+  "bound_audiences": ["user-mcp"],
+  "bound_claims": {
+    "azp": "token-exchange",
+    "scope": "*users.read*"
+  },
+  "bound_claims_type": "glob",
+  "token_policies": ["user-mcp-obo-read"],
+  "token_ttl": 300,
+  "token_max_ttl": 900,
+  "token_type": "service"
+}
+EOF
+
+# Role for OBO tokens that carry users.write scope.
+vault write auth/jwt-keycloak/role/user-mcp-obo-write - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "preferred_username",
+  "bound_audiences": ["user-mcp"],
+  "bound_claims": {
+    "azp": "token-exchange",
+    "scope": "*users.write*"
+  },
+  "bound_claims_type": "glob",
+  "token_policies": ["user-mcp-obo-write"],
   "token_ttl": 300,
   "token_max_ttl": 900,
   "token_type": "service"
