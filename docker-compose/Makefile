@@ -61,6 +61,7 @@ help:
 	@echo "  make             Full reset, build, and start for the selected arch"
 	@echo "  make build       Build local images for DOCKER_PLATFORM"
 	@echo "  make clear       Stop stack and delete volumes"
+	@echo "  make prove-rar   Mint a Keycloak RAR token and hit Vault with it"
 	@echo "  make help        Show this message"
 
 # check-env validates that every required variable is set and non-empty.
@@ -93,4 +94,7 @@ clear:
 build:
 	docker compose build
 
-.PHONY: all help check-env clear build
+prove-rar:
+	bash ./scripts/prove-keycloak-rar.sh
+
+.PHONY: all help check-env clear build prove-rar

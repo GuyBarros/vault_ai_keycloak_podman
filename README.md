@@ -1,3 +1,13 @@
+This is the `vault_2.1` branch (Vault Enterprise 2.1 + Keycloak OIDC RAR). The working 2.0.4 demo stays on `main` — do not run both stacks at once; they share host ports 8080/8081/8200.
+
+After `make`, prove Keycloak RAR against Vault with:
+
+```bash
+cd docker-compose
+. ./setenv
+make prove-rar
+```
+
 note: AI Companions have been used in the development of this demo.
 
 

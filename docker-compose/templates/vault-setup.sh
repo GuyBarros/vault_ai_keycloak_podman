@@ -265,26 +265,20 @@ EOF
 # baseline ACL policies intersected with its Agent Registry ceiling policy.
 # No login call, and no SPIFFE identity for user-mcp is needed for this flow.
 #
-# RAR (authorization_details / vault:path_access) IS used — see the
-# hardcoded-claim mappers on the users.read/users.write client scopes below
-# and token-exchange/verify/authorization.py (Keycloak Authorization Services
-# as the live PDP for which scope, and therefore which authorization_details,
-# a request is granted). optional_authorization_details=true is still set so
-# the baseline ∩ ceiling intersection alone still authorizes requests that
-# for any reason arrive without it — RAR here is additive, not required.
-#
-# NOTE: end-to-end validation is currently blocked by an unrelated Keycloak
-# issue — every Keycloak-issued access token carries a body `typ` claim
-# (Keycloak always sets it in TokenManager.initToken(), unconditionally,
-# before any mapper runs) that Vault's OAuth Resource Server schema
-# validation rejects outright, regardless of RAR. Confirmed on both Vault
-# 2.0.4 and 2.1.0 GA. The client attribute
-# "access.token.header.type.rfc9068" (set on the token-exchange client
-# below) fixes the JWT *header* typ to the RFC 9068-correct "at+jwt", but
-# does not remove the redundant body claim, so this alone doesn't unblock
-# Vault. No mapper (hardcoded-claim, script — unavailable in this Keycloak
-# build) can remove that body claim; only a custom Keycloak Java SPI
-# protocol mapper could.
+# RAR (authorization_details / vault:path_access) IS required. Keycloak does
+# not put RFC 9396 details into the JWT by itself (OID4VCI processors only
+# echo them on the token-endpoint JSON body). The custom protocol mapper
+# oidc-vault-jwt-compat-mapper (keycloak-providers/) does two things Vault
+# needs:
+#   1. drops the payload `typ` claim Keycloak always writes in
+#      TokenManager.initToken() — Vault OAuth RS schema-rejects that body
+#      claim. Header typ is set separately via the client attribute
+#      access.token.header.type.rfc9068 = at+jwt (RFC 9068).
+#   2. copies authorization_details into the JWT from the token request
+#      (form param or PAR client-session note), or synthesizes
+#      vault:path_access entries from users.read / users.write scopes.
+# token-exchange/verify/authorization.py still uses Keycloak Authorization
+# Services as the live PDP for which scope a request is granted.
 
 # oauth-resource-server required a one-time activation pre-2.1 (beta); as of
 # Vault 2.1 it's GA and the activation-flags entry is gone entirely — only
@@ -307,7 +301,7 @@ vault write sys/config/oauth-resource-server/keycloak-demo \
   user_claim="sub" \
   jwt_type="access_token" \
   audiences="user-mcp" \
-  optional_authorization_details=true
+  optional_authorization_details=false
 echo "vault-setup: oauth-resource-server profile 'keycloak-demo' configured."
 
 # Baseline/ceiling policies — same DB-creds + transform grants the old
@@ -353,14 +347,15 @@ vault write identity/entity name=demo-admin policies="user-mcp-agentic-read,user
 DEMO_ADMIN_ENTITY_ID=$(vault read -field=id identity/entity/name/demo-admin)
 
 # Entity aliases bind each entity to its Keycloak identity via (issuer, sub).
+# `name` MUST equal the JWT `sub` — Vault looks the alias up by (issuer, name).
 vault write identity/entity-alias \
-  name="demo-user-oauth" \
+  name="${KC_READER_USER_ID}" \
   canonical_id="${DEMO_USER_ENTITY_ID}" \
   issuer="http://localhost:8081/realms/demo" \
   external_id="${KC_READER_USER_ID}"
 
 vault write identity/entity-alias \
-  name="demo-admin-oauth" \
+  name="${KC_WRITER_USER_ID}" \
   canonical_id="${DEMO_ADMIN_ENTITY_ID}" \
   issuer="http://localhost:8081/realms/demo" \
   external_id="${KC_WRITER_USER_ID}"

@@ -150,10 +150,35 @@ services:
     networks:
       - app-network
 
+  rar-bootstrap:
+    <<: *cpu
+    image: hashicorp/vault:2.1.0
+    container_name: rar-bootstrap
+    restart: "no"
+    user: root
+    depends_on:
+      vault:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      db-setup:
+        condition: service_completed_successfully
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: root
+    entrypoint: /bin/sh
+    command: /vault-setup/rar-bootstrap.sh
+    volumes:
+      - ./templates/rar-bootstrap.sh:/vault-setup/rar-bootstrap.sh:ro
+    networks:
+      - app-network
 
   keycloak:
     <<: *cpu
-    image: quay.io/keycloak/keycloak:26.7
+    build:
+      context: ../keycloak-providers
+      dockerfile: Dockerfile
+    image: keycloak-vault-rar:local
     container_name: keycloak
     ports:
       - "8081:8080"
