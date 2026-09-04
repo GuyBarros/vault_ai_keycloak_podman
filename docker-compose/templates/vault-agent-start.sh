@@ -21,7 +21,7 @@ if [ ! -x "$SPIRE_AGENT_BIN" ]; then
   echo "vault-agent-start: downloading spire-agent binary v${SPIRE_VERSION}..."
   ARCH=${SPIRE_ARCH:-$(uname -m)}
   case "$ARCH" in
-    x86_64|amd64)  ARCH=x86_64 ;;
+    x86_64|amd64)  ARCH=amd64 ;;
     aarch64|arm64|arm) ARCH=arm64 ;;
     *) echo "unsupported arch: $ARCH"; exit 1 ;;
   esac
