@@ -64,17 +64,26 @@ class Settings(BaseSettings):
     vault_addr: str = Field(default="", alias="USER_MCP_VAULT_ADDR")
     vault_namespace: str = Field(default="", alias="USER_MCP_VAULT_NAMESPACE")
 
-    # SPIFFE workload identity: user-mcp authenticates to Vault with a JWT-SVID
-    # fetched from the local SPIRE Workload API, not with the caller's OBO token.
+    # Vault JWT auth via Keycloak OBO token: user-mcp passes the caller's
+    # validated OBO token directly to Vault to obtain database credentials.
+    # bound_claims on the Vault roles enforce aud, azp, and scope.
+    vault_keycloak_jwt_path: str = Field(default="jwt-keycloak", alias="USER_MCP_VAULT_KEYCLOAK_JWT_PATH")
+    vault_keycloak_read_role: str = Field(
+        default="user-mcp-obo-read", alias="USER_MCP_VAULT_KEYCLOAK_READ_ROLE"
+    )
+    vault_keycloak_write_role: str = Field(
+        default="user-mcp-obo-write", alias="USER_MCP_VAULT_KEYCLOAK_WRITE_ROLE"
+    )
+
+    # SPIFFE workload identity: used only by the TransformMasker (PII masking).
+    # Database credential issuance has moved to the jwt-keycloak mount above.
     spiffe_socket: str = Field(default="", alias="USER_MCP_SPIFFE_SOCKET")
     spiffe_jwt_audience: str = Field(default="", alias="USER_MCP_SPIFFE_JWT_AUDIENCE")
     vault_spiffe_jwt_path: str = Field(default="jwt-spiffe", alias="USER_MCP_VAULT_SPIFFE_JWT_PATH")
-    vault_spiffe_read_role: str = Field(
-        default="user-mcp-spiffe-read", alias="USER_MCP_VAULT_SPIFFE_READ_ROLE"
+    vault_spiffe_transform_role: str = Field(
+        default="user-mcp-spiffe-transform", alias="USER_MCP_VAULT_SPIFFE_TRANSFORM_ROLE"
     )
-    vault_spiffe_write_role: str = Field(
-        default="user-mcp-spiffe-write", alias="USER_MCP_VAULT_SPIFFE_WRITE_ROLE"
-    )
+
     vault_db_read_path: str = Field(
         default="database/creds/user-mcp-read-role",
         alias="USER_MCP_VAULT_DB_READ_PATH",
@@ -157,6 +166,7 @@ def load_settings() -> Settings:
         pg_url_configured=bool(settings.pg_url) if settings.user_backend == "postgres" else None,
         db_auth_mode=settings.db_auth_mode if settings.user_backend == "postgres" else None,
         vault_addr=settings.vault_addr if settings.user_backend == "postgres" and settings.db_auth_mode == "vault" else None,
+        vault_keycloak_jwt_path=settings.vault_keycloak_jwt_path if settings.user_backend == "postgres" and settings.db_auth_mode == "vault" else None,
         verify_issuer=settings.effective_issuer or None,
         verify_audience=settings.audience or None,
         verify_jwks_url=settings.effective_jwks_url or None,

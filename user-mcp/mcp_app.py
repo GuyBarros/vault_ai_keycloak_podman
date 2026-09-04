@@ -67,7 +67,7 @@ def build_mcp_app(settings: Settings) -> tuple[FastMCP, UserRepository]:
                 socket_path=settings.spiffe_socket,
                 audience=settings.spiffe_jwt_audience,
             ),
-            jwt_role=settings.vault_spiffe_read_role,
+            jwt_role=settings.vault_spiffe_transform_role,
             transform_role=settings.transform_role,
         )
 

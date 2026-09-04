@@ -240,6 +240,7 @@ class JwtAuthMiddleware:
             scope=identity.get("scope"),
             user=verified_user,
             groups=identity.get("groups") or (),
+            token=scope_state.get("jwt_token"),
         )
         try:
             wrapped_send = _build_request_id_send(send, request_id)
