@@ -130,6 +130,8 @@ EOF
 #   - aud contains "user-mcp"        (token was issued for this service)
 #   - azp is "token-exchange"        (token was issued by the exchange client)
 #   - scope contains "users.read"    (caller holds read entitlement)
+# The scope claim is a space-separated string (e.g. "delegation:ai-agent users.read"),
+# so a glob wildcard prefix/suffix is required for substring matching.
 vault write auth/jwt-keycloak/role/user-mcp-obo-read - <<'EOF'
 {
   "role_type": "jwt",
@@ -137,7 +139,7 @@ vault write auth/jwt-keycloak/role/user-mcp-obo-read - <<'EOF'
   "bound_audiences": ["user-mcp"],
   "bound_claims": {
     "azp": "token-exchange",
-    "scope": "users.read"
+    "scope": "*users.read*"
   },
   "bound_claims_type": "glob",
   "token_policies": ["user-mcp-obo-read"],
@@ -155,7 +157,7 @@ vault write auth/jwt-keycloak/role/user-mcp-obo-write - <<'EOF'
   "bound_audiences": ["user-mcp"],
   "bound_claims": {
     "azp": "token-exchange",
-    "scope": "users.write"
+    "scope": "*users.write*"
   },
   "bound_claims_type": "glob",
   "token_policies": ["user-mcp-obo-write"],
