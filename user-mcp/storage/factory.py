@@ -44,4 +44,6 @@ def build_repository(settings: Settings) -> UserRepository:
         vault_db_write_path=settings.vault_db_write_path,
         vault_spiffe_jwt_path=settings.vault_spiffe_jwt_path,
         vault_spiffe_workload_role=settings.vault_spiffe_workload_role,
+        vault_action_read_role=settings.vault_action_read_role,
+        vault_action_write_role=settings.vault_action_write_role,
     )

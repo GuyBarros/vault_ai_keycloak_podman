@@ -23,10 +23,9 @@ class VaultClient:
     """Thin async Vault client for the JWT login + database creds flow.
 
     Authenticates to Vault with a JWT — SPIFFE JWT-SVID for workload
-    attestation / Transform, Keycloak OBO for database/creds. Which OIDC
-    role to request for DB creds is selected from the human user's
-    validated scope; Vault bound_claims decide whether that login is
-    allowed. SPIFFE login is required but never sufficient for DB creds.
+    attestation, Keycloak OBO for human identity. Neither login token
+    can call secrets. Vault then mints a third action token (token role)
+    that is the only identity allowed to read database/creds or Transform.
     """
 
     def __init__(
@@ -96,6 +95,66 @@ class VaultClient:
             message="Vault JWT login succeeded",
             vault_role=role,
             jwt_path=path,
+        )
+        return client_token
+
+    async def create_action_token(
+        self,
+        parent_token: str,
+        role: str,
+        display_name: str,
+        meta: dict[str, str],
+        ttl: str = "60s",
+    ) -> str:
+        """Mint the combined user+workload identity via a Vault token role.
+
+        The parent JWT login token must only be allowed to hit
+        auth/token/create/<role>. The returned token is the only one
+        permitted to call database/creds and Transform.
+        """
+        url = f"{self._addr}/v1/auth/token/create/{role}"
+        payload = {
+            "display_name": display_name[:32],
+            "meta": meta,
+            "ttl": ttl,
+            "renewable": False,
+        }
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(
+                    url, json=payload, headers=self._headers(parent_token)
+                )
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault action-token create failed (transport): {exc}",
+            ) from exc
+
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault action-token create rejected (status={resp.status_code}): "
+                f"{_safe_error_body(resp)}",
+            )
+
+        body = resp.json()
+        auth = body.get("auth") or {}
+        client_token = auth.get("client_token")
+        if not client_token:
+            raise AppError(
+                502,
+                "agent_error",
+                "Vault action-token response did not include auth.client_token.",
+            )
+        log_event(
+            LOGGER,
+            "vault_action_token_ok",
+            level=logging.INFO,
+            message="Vault minted combined user+workload action identity",
+            vault_role=role,
+            display_name=display_name[:32],
         )
         return client_token
 

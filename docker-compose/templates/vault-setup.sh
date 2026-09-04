@@ -81,8 +81,8 @@ vault delete auth/jwt-spiffe/role/user-mcp-spiffe-read >/dev/null 2>&1 || true
 vault delete auth/jwt-spiffe/role/user-mcp-spiffe-write >/dev/null 2>&1 || true
 
 # Workload attestation only: bound_subject is the user-mcp SPIFFE ID.
-# token_policies=default — no database/creds, no transform. Proves the
-# caller is this workload before jwt-keycloak issues DB credentials.
+# token_policies=default — no secrets, no token-role mint. This login
+# proves the caller is user-mcp; it cannot execute Vault actions.
 vault write auth/jwt-spiffe/role/user-mcp-spiffe - <<'EOF'
 {
   "role_type": "jwt",
@@ -97,12 +97,13 @@ vault write auth/jwt-spiffe/role/user-mcp-spiffe - <<'EOF'
 }
 EOF
 
-echo "vault-setup: jwt-spiffe user-mcp workload role written (no DB policy)."
+echo "vault-setup: jwt-spiffe user-mcp workload role written (attestation only)."
 
 # ── JWT auth backend for Keycloak OBO tokens (human authorization) ───────────
 # user-mcp presents the caller's OBO JWT. Vault validates signature, audience,
-# issuer, and bound_claims (Keycloak groups + OIDC scope) before issuing a
-# token that can read database/creds/*. A reader token cannot assume the write
+# issuer, and bound_claims (Keycloak groups + OIDC scope). The login token
+# itself has NO database/creds or transform policy — it may only mint the
+# combined action identity below. A reader token cannot assume the write mint
 # role even if the workload asks for it.
 vault auth list | grep -q "^jwt-keycloak/" || \
   vault auth enable -path=jwt-keycloak jwt
@@ -120,6 +121,8 @@ vault write auth/jwt-keycloak/config \
   bound_issuer="http://localhost:8081/realms/demo" \
   jwt_supported_algs="RS256"
 
+# Secret policies attach ONLY to the combined action token roles, never to
+# the human JWT login or the SPIFFE workload login.
 vault policy write user-mcp-oidc-read - <<'EOF'
 path "database/creds/user-mcp-read-role" {
   capabilities = ["read"]
@@ -132,12 +135,55 @@ path "database/creds/user-mcp-write-role" {
 }
 EOF
 
+# Written here so action token roles can reference it; engine is enabled later.
+vault policy write user-mcp-transform - <<'EOF'
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+EOF
+
+vault policy write user-mcp-mint-action-read - <<'EOF'
+path "auth/token/create/user-mcp-action-read" {
+  capabilities = ["update"]
+}
+EOF
+
+vault policy write user-mcp-mint-action-write - <<'EOF'
+path "auth/token/create/user-mcp-action-write" {
+  capabilities = ["update"]
+}
+EOF
+
+# Third identity: Vault-issued action token = human (OBO) + workload (user-mcp).
+# Only these tokens may read database/creds or call Transform. The parent JWT
+# logins cannot. bound_cidrs keeps use of the action token on user-mcp.
+vault write auth/token/roles/user-mcp-action-read - <<'EOF'
+{
+  "allowed_policies": ["user-mcp-oidc-read", "user-mcp-transform"],
+  "orphan": false,
+  "renewable": false,
+  "token_explicit_max_ttl": 60,
+  "token_bound_cidrs": ["172.28.0.20/32"],
+  "token_type": "service"
+}
+EOF
+
+vault write auth/token/roles/user-mcp-action-write - <<'EOF'
+{
+  "allowed_policies": ["user-mcp-oidc-write", "user-mcp-transform"],
+  "orphan": false,
+  "renewable": false,
+  "token_explicit_max_ttl": 60,
+  "token_bound_cidrs": ["172.28.0.20/32"],
+  "token_type": "service"
+}
+EOF
+
 # bound_claims is AND across keys; list values are OR. glob so space-separated
 # OIDC `scope` still matches when other scopes are present.
 # writers may also read (list users); readers cannot login to the write role.
 # token_bound_cidrs pins issued tokens (and login) to the user-mcp workload
-# address — SPIFFE still attests that process; a laptop with a stolen OBO
-# cannot mint database/creds on the published Vault port.
+# address — a laptop with a stolen OBO cannot mint the action identity.
 vault write auth/jwt-keycloak/role/user-mcp-oidc-read - <<'EOF'
 {
   "role_type": "jwt",
@@ -148,7 +194,7 @@ vault write auth/jwt-keycloak/role/user-mcp-oidc-read - <<'EOF'
     "groups": ["readers", "writers"],
     "scope": "*users.read*"
   },
-  "token_policies": ["user-mcp-oidc-read"],
+  "token_policies": ["user-mcp-mint-action-read"],
   "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,
@@ -166,7 +212,7 @@ vault write auth/jwt-keycloak/role/user-mcp-oidc-write - <<'EOF'
     "groups": ["writers"],
     "scope": "*users.write*"
   },
-  "token_policies": ["user-mcp-oidc-write"],
+  "token_policies": ["user-mcp-mint-action-write"],
   "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,
@@ -174,7 +220,7 @@ vault write auth/jwt-keycloak/role/user-mcp-oidc-write - <<'EOF'
 }
 EOF
 
-echo "vault-setup: jwt-keycloak roles written (bound_claims on groups + scope)."
+echo "vault-setup: jwt-keycloak mint-only roles + action token roles written."
 
 # Vault OIDC identity: issuer + role for the ai-agent ──
 vault write identity/oidc/config \
@@ -347,22 +393,15 @@ vault write transform/transformation/mask-credit-card \
 vault write transform/role/user-mcp-transform \
   transformations=mask-ssn,mask-credit-card
 
-# Policy to allow user-mcp to encode through Transform
-vault policy write user-mcp-transform - <<'EOF'
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
-}
-EOF
-
-# SPIFFE role for Transform only — no database/creds. Workload identity can
-# mask PII; it cannot mint Postgres credentials.
+# Leftover SPIFFE transform role: attestation only. Transform encode is
+# granted solely on the combined action token (user + user-mcp).
 vault write auth/jwt-spiffe/role/user-mcp-spiffe-transform - <<'EOF'
 {
   "role_type": "jwt",
   "user_claim": "sub",
   "bound_audiences": ["TESTING"],
   "bound_subject": "spiffe://example.org/user-mcp",
-  "token_policies": ["user-mcp-transform"],
+  "token_policies": ["default"],
   "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,

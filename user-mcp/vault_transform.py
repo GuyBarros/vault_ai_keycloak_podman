@@ -25,7 +25,9 @@ import asyncio
 import logging
 import re
 
-from logging_utils import bind_log_context, log_event
+from auth.context import current_vault_action_token
+from errors import AppError
+from logging_utils import log_event
 from models import UserRecord
 from vault_client import VaultClient
 
@@ -171,25 +173,28 @@ async def mask_user_records(
 
 
 class TransformMasker:
-    """Masks UserRecord tool results via Vault Transform using this workload's SPIFFE identity."""
+    """Masks UserRecord tool results via Vault Transform using the combined
+    Vault action token (human + user-mcp). SPIFFE-only tokens cannot encode.
+    """
 
     def __init__(
         self,
         vault: VaultClient,
-        spiffe,
-        jwt_role: str,
         transform_role: str,
     ):
         self._vault = vault
-        self._spiffe = spiffe
-        self._jwt_role = jwt_role
         self._transform_role = transform_role
 
     async def mask_result(self, result):
         """Mask a UserRecord or list[UserRecord]; other values pass through."""
-        svid = await self._spiffe.get_jwt_svid()
-        bind_log_context(vault_auth_mode="spiffe", vault_role=self._jwt_role)
-        client_token = await self._vault.login_with_jwt(svid.token, self._jwt_role)
+        client_token = current_vault_action_token.get(None)
+        if not client_token:
+            raise AppError(
+                403,
+                "invalid_request",
+                "Vault Transform requires the combined user+user-mcp action "
+                "token; the SPIFFE and OBO login tokens cannot encode.",
+            )
         if isinstance(result, list) and result and isinstance(result[0], UserRecord):
             masked = await mask_user_records(
                 result, self._vault, client_token, self._transform_role

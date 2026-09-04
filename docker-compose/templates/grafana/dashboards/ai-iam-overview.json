@@ -26,7 +26,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Number of jwt-keycloak logins (user-mcp presenting the human OBO token; Vault bound_claims on groups + scope) in the last 5 minutes. Each login roughly tracks a tool call needing DB credentials.",
+      "description": "Number of jwt-keycloak logins (human OBO; mint-only). Secret calls use the combined action token Vault issues after that login.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },

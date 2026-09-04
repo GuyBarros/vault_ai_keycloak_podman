@@ -5,7 +5,7 @@ import logging
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from auth.context import caller_is_admin
+from auth.context import caller_is_admin, current_vault_action_token
 from auth.scope_check import get_required_scopes, register_tool_scopes, require_scopes
 from errors import AppError
 from logging_utils import log_event
@@ -173,6 +173,8 @@ async def _run_tool(tool_name, action, result_summary, masker=None):
             status_code=500,
         )
         raise ToolError(f"{tool_name} failed: {exc}") from exc
+    finally:
+        current_vault_action_token.set(None)
 
     summary = result_summary(result) if result_summary else {}
     log_event(

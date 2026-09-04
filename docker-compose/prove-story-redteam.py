@@ -217,6 +217,53 @@ except urllib.error.HTTPError as exc:
     return int(parsed.get("status") or 0), parsed.get("body") or {}, r.stdout[:400]
 
 
+def vault_post_mcp(path: str, token: str, payload: dict):
+    code = r"""
+import json, os, urllib.error, urllib.request
+payload = json.loads(os.environ["V_PAYLOAD"])
+req = urllib.request.Request(
+    "http://vault:8200/v1/%s" % os.environ["V_PATH"],
+    data=json.dumps(payload).encode(),
+    headers={"Content-Type": "application/json", "X-Vault-Token": os.environ["V_TOKEN"]},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        raw = resp.read()
+        print(json.dumps({"status": resp.status, "body": json.loads(raw) if raw else {}}))
+except urllib.error.HTTPError as exc:
+    raw = exc.read()
+    try:
+        body = json.loads(raw) if raw else {}
+    except Exception:
+        body = {}
+    print(json.dumps({"status": exc.code, "body": body}))
+"""
+    r = subprocess.run(
+        [
+            "docker",
+            "exec",
+            "-e",
+            f"V_PATH={path}",
+            "-e",
+            f"V_TOKEN={token}",
+            "-e",
+            f"V_PAYLOAD={json.dumps(payload)}",
+            "user-mcp",
+            "/app/.venv/bin/python",
+            "-c",
+            code,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        parsed = json.loads(r.stdout.strip() or "{}")
+    except json.JSONDecodeError:
+        return 0, {}, r.stdout + r.stderr
+    return int(parsed.get("status") or 0), parsed.get("body") or {}, r.stdout[:400]
+
+
 def main() -> int:
     print("Red-team: Vault+SPIFFE as authorization for the agentic ecosystem")
     print("KILL = a reviewer can use this to knock the story down")
@@ -295,6 +342,15 @@ def main() -> int:
                 kill("SPIFFE transform role minted read DB creds")
             else:
                 hold(f"SPIFFE transform role cannot read DB creds (http {cr})")
+            tr, _, _ = vault_post_mcp(
+                "transform/encode/user-mcp-transform",
+                token,
+                {"value": "123-45-6789", "transformation": "mask-ssn"},
+            )
+            if tr == 200:
+                kill("SPIFFE transform role encoded PII without the combined action token")
+            else:
+                hold(f"SPIFFE transform role cannot encode (http {tr})")
         else:
             note(f"transform SPIFFE login from user-mcp http {st}")
 
@@ -335,11 +391,34 @@ def main() -> int:
     st, body, _ = vault_login_mcp("user-mcp-oidc-read", user_read)
     token = (body.get("auth") or {}).get("client_token")
     if st == 200 and token:
-        cr, creds, _ = vault_get_mcp("database/creds/user-mcp-read-role", token)
+        cr, _, _ = vault_get_mcp("database/creds/user-mcp-read-role", token)
         if cr == 200:
-            hold("user-mcp CIDR + valid reader OBO still mints read DB creds")
+            kill("human jwt-keycloak login token minted DB creds; only the combined action token should")
         else:
-            kill(f"user-mcp cannot mint read DB creds after OIDC login (http {cr})")
+            hold(f"human jwt-keycloak login token cannot read database/creds (http {cr})")
+        st2, minted, _ = vault_post_mcp(
+            "auth/token/create/user-mcp-action-read",
+            token,
+            {
+                "display_name": "user+user-mcp",
+                "meta": {
+                    "preferred_username": "user",
+                    "spiffe_id": "spiffe://example.org/user-mcp",
+                },
+                "ttl": "60s",
+                "renewable": False,
+            },
+        )
+        action = (minted.get("auth") or {}).get("client_token")
+        if st2 == 200 and action:
+            hold("Vault minted combined user+user-mcp action token")
+            cr, creds, _ = vault_get_mcp("database/creds/user-mcp-read-role", action)
+            if cr == 200:
+                hold("combined action token mints read DB creds")
+            else:
+                kill(f"combined action token cannot mint read DB creds (http {cr})")
+        else:
+            kill(f"Vault did not mint combined action token (http {st2})")
     else:
         kill(f"user-mcp OIDC read login failed (http {st})")
 

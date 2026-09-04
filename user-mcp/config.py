@@ -73,11 +73,17 @@ class Settings(BaseSettings):
     vault_jwt_write_role: str = Field(
         default="user-mcp-oidc-write", alias="USER_MCP_VAULT_JWT_WRITE_ROLE"
     )
+    vault_action_read_role: str = Field(
+        default="user-mcp-action-read", alias="USER_MCP_VAULT_ACTION_READ_ROLE"
+    )
+    vault_action_write_role: str = Field(
+        default="user-mcp-action-write", alias="USER_MCP_VAULT_ACTION_WRITE_ROLE"
+    )
 
     # SPIFFE workload identity: every Vault DB-cred request first logs in
     # with this process's JWT-SVID (bound_subject = user-mcp). That login
-    # has no database/creds policy — it only attests the workload. Transform
-    # (PII masking) also uses SPIFFE.
+    # has no secret policy — it only attests the workload. The combined
+    # Vault action token is what calls database/creds and Transform.
     spiffe_socket: str = Field(default="", alias="USER_MCP_SPIFFE_SOCKET")
     spiffe_jwt_audience: str = Field(default="", alias="USER_MCP_SPIFFE_JWT_AUDIENCE")
     vault_spiffe_jwt_path: str = Field(default="jwt-spiffe", alias="USER_MCP_VAULT_SPIFFE_JWT_PATH")

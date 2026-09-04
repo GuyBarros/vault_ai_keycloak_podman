@@ -31,6 +31,14 @@ current_obo_token: ContextVar[Optional[str]] = ContextVar(
     "current_obo_token", default=None
 )
 
+# Vault-issued combined action token (human + user-mcp). Secret calls
+# (database/creds, transform) must use this token, never the SPIFFE or
+# jwt-keycloak login tokens.
+current_vault_action_token: ContextVar[Optional[str]] = ContextVar(
+    "current_vault_action_token", default=None
+)
+
+
 
 def bind_request_identity(
     scope: str | None,
