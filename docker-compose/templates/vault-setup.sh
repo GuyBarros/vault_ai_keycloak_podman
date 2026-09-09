@@ -192,6 +192,23 @@ path "sys/control-group/request" {
 }
 EOF
 
+# CIBA is tied to the action, then to the actor on that action.
+# Policy ciba-list-users is the list-users switch (Vault UI: ACL policies).
+#   read on ciba/list-users/<username> = that human must Approve
+#   deny                              = silent OBO for that human on this action
+# Create/update/delete do not consult this policy.
+vault policy write ciba-list-users - <<'EOF'
+path "ciba/list-users/admin" {
+  capabilities = ["read"]
+}
+path "ciba/list-users/user" {
+  capabilities = ["read"]
+}
+path "sys/capabilities-self" {
+  capabilities = ["update"]
+}
+EOF
+
 # Third identity: Vault-issued action token = human (OBO) + workload (user-mcp).
 # Only these tokens may read database/creds or call Transform. The parent JWT
 # logins cannot. bound_cidrs keeps use of the action token on user-mcp.
@@ -222,6 +239,9 @@ EOF
 # writers may also read (list users); readers cannot login to the write role.
 # token_bound_cidrs pins issued tokens (and login) to the user-mcp workload
 # address — a laptop with a stolen OBO cannot mint the action identity.
+# CIBA for list-users is ACL policy ciba-list-users (per-actor paths), not a
+# JWT bound_claim. token_policies includes that policy so each human can
+# probe ciba/list-users/<their username> after login.
 vault write auth/jwt-keycloak/role/user-mcp-oidc-read - <<'EOF'
 {
   "role_type": "jwt",
@@ -232,7 +252,7 @@ vault write auth/jwt-keycloak/role/user-mcp-oidc-read - <<'EOF'
     "groups": ["readers", "writers"],
     "scope": "*users.read*"
   },
-  "token_policies": ["user-mcp-mint-action-read"],
+  "token_policies": ["user-mcp-mint-action-read", "ciba-list-users"],
   "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,
@@ -417,6 +437,7 @@ vault secrets list | grep -q "^litellm/" || \
 
 vault kv put litellm/config \
   openai_api_key="${OPENAI_API_KEY:-}" \
+  anthropic_api_key="${ANTHROPIC_API_KEY:-}" \
   watsonx_api_key="${WATSONX_API_KEY:-}" \
   watsonx_project_id="${WATSONX_PROJECT_ID:-}" \
   master_key="${LITELLM_MASTER_KEY:-ibm123}"

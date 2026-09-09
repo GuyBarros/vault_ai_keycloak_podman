@@ -57,7 +57,11 @@ class VaultClient:
         return headers
 
     async def login_with_jwt(
-        self, jwt_token: str, role: str, jwt_path: str | None = None
+        self,
+        jwt_token: str,
+        role: str,
+        jwt_path: str | None = None,
+        jwt_grant: str | None = None,
     ) -> str:
         path = (jwt_path or self._jwt_path).strip("/")
         url = f"{self._addr}/v1/auth/{path}/login"
@@ -72,7 +76,20 @@ class VaultClient:
                 f"Vault login failed (transport): {exc}",
             ) from exc
 
+        extra = {"jwt_grant": jwt_grant} if jwt_grant else {}
         if resp.status_code >= 400:
+            log_event(
+                LOGGER,
+                "vault_login_rejected",
+                level=logging.INFO,
+                message=(
+                    "Vault JWT login rejected "
+                    f"(status={resp.status_code}): {_safe_error_body(resp)}"
+                ),
+                vault_role=role,
+                jwt_path=path,
+                **extra,
+            )
             raise AppError(
                 _vault_status_to_app_status(resp.status_code),
                 _vault_status_to_app_error(resp.status_code),
@@ -95,8 +112,50 @@ class VaultClient:
             message="Vault JWT login succeeded",
             vault_role=role,
             jwt_path=path,
+            **extra,
         )
         return client_token
+
+    async def ciba_required_by_policy(
+        self,
+        client_token: str,
+        *,
+        action: str,
+        user: str,
+    ) -> bool:
+        """True when ACL policy for this action requires CIBA for this human.
+
+        Probe path is ciba/<action>/<username>. Edit policy ciba-list-users
+        in the Vault UI: read = phone Approve, deny = silent OBO.
+        """
+        path = f"ciba/{action}/{user}"
+        url = f"{self._addr}/v1/sys/capabilities-self"
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(
+                    url,
+                    json={"paths": [path]},
+                    headers=self._headers(client_token),
+                )
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault capabilities-self failed (transport): {exc}",
+            ) from exc
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                "Vault capabilities-self rejected "
+                f"(status={resp.status_code}): {_safe_error_body(resp)}",
+            )
+        data = _json_body(resp).get("data") or {}
+        caps = data.get(path) or data.get("capabilities") or []
+        if not isinstance(caps, list):
+            caps = [caps]
+        caps_l = {str(c).lower() for c in caps}
+        return "read" in caps_l and "deny" not in caps_l
 
     async def create_action_token(
         self,

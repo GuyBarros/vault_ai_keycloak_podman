@@ -384,7 +384,7 @@
       },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "{container=\"user-mcp\"} | json | event=~\"vault_login_ok|vault_action_token_ok\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] event={{.event}} scope={{.auth_scope}} spiffe_id={{.workload_spiffe_id}} auth={{.vault_auth_mode}} vault_role={{.vault_role}} jwt_path={{.jwt_path}} display_name={{.display_name}} request_id={{.request_id}}\"",
+        "expr": "{container=\"user-mcp\"} | json | event=~\"vault_login_ok|vault_login_rejected|vault_ciba_required|ciba_started|ciba_approved|ciba_denied|vault_action_token_ok\" | preferred_username=~\"$user\" | line_format \"[{{.preferred_username}}→{{.agent_id}}] event={{.event}} scope={{.auth_scope}} spiffe_id={{.workload_spiffe_id}} auth={{.vault_auth_mode}} vault_role={{.vault_role}} jwt_path={{.jwt_path}} jwt_grant={{.jwt_grant}} display_name={{.display_name}} request_id={{.request_id}}\"",
         "legendFormat": ""
       }],
       "title": "Vault identities (SPIFFE + OBO login, then action token)",
@@ -416,7 +416,7 @@
       },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | event=~\"agent_request_started|identity_broker_call|obo_token_exchange_completed|scoped_tool_invoke|scoped_tool_token_exchange_failed|tool_invoked|vault_db_creds_issued|vault_login_ok\" | preferred_username=~\"$user\"",
+        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | event=~\"agent_request_started|identity_broker_call|obo_token_exchange_completed|scoped_tool_invoke|scoped_tool_token_exchange_failed|tool_invoked|vault_db_creds_issued|vault_login_ok|vault_login_rejected|vault_ciba_required|ciba_started|ciba_approved|ciba_denied\" | preferred_username=~\"$user\"",
         "legendFormat": ""
       }],
       "title": "Correlated Request Trace (all services)",

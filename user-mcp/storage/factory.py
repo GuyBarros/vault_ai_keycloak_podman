@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ciba_client import CibaClient
 from config import Settings
 from spiffe_client import SpiffeSvidProvider
 from storage.base import UserRepository
@@ -30,6 +31,18 @@ def build_repository(settings: Settings) -> UserRepository:
             audience=settings.spiffe_jwt_audience,
         )
 
+    ciba_client: CibaClient | None = None
+    if settings.db_auth_mode == "vault" and settings.ciba_client_id:
+        ciba_client = CibaClient(
+            keycloak_url=settings.ciba_keycloak_url,
+            realm=settings.ciba_realm,
+            client_id=settings.ciba_client_id,
+            client_secret=settings.ciba_client_secret,
+            scope=settings.ciba_scope,
+            poll_timeout_seconds=settings.ciba_poll_timeout_seconds,
+            approve_url=settings.ciba_approve_url,
+        )
+
     return PostgresUserRepository(
         pg_url=settings.pg_url,
         auth_mode=settings.db_auth_mode,
@@ -46,4 +59,5 @@ def build_repository(settings: Settings) -> UserRepository:
         vault_spiffe_workload_role=settings.vault_spiffe_workload_role,
         vault_action_read_role=settings.vault_action_read_role,
         vault_action_write_role=settings.vault_action_write_role,
+        ciba_client=ciba_client,
     )

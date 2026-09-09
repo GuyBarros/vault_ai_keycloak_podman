@@ -15,8 +15,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 
 # Install production dependencies only; application source is copied separately.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
@@ -28,7 +27,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY auth/    ./auth/
 COPY storage/ ./storage/
 COPY tools/   ./tools/
-COPY server.py mcp_app.py config.py errors.py logging_utils.py models.py vault_client.py spiffe_client.py vault_transform.py ./
+COPY server.py mcp_app.py config.py errors.py logging_utils.py models.py vault_client.py spiffe_client.py vault_transform.py ciba_client.py ./
 # COPY users_repository.json ./
 
 ENV VIRTUAL_ENV=/app/.venv \

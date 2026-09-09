@@ -2,7 +2,11 @@
   "realm": "demo",
   "enabled": true,
   "attributes": {
-    "token-exchange": "true"
+    "token-exchange": "true",
+    "cibaBackchannelTokenDeliveryMode": "poll",
+    "cibaExpiresIn": "120",
+    "cibaInterval": "5",
+    "cibaAuthRequestedUserHint": "login_hint"
   },
   "sslRequired": "none",
   "registrationAllowed": false,
@@ -11,7 +15,8 @@
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
   "bruteForceProtected": false,
-  "accessTokenLifespan": 600,
+  "accessTokenLifespan": 28800,
+  "ssoSessionIdleTimeout": 28800,
   "ssoSessionMaxLifespan": 36000,
 
   "clients": [
@@ -120,6 +125,71 @@
             "add.to.access.token": "true",
             "introspection.token.claim": "true",
             "add.to.lightweight.access.token": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "ciba-client",
+      "name": "ciba-client",
+      "description": "Confidential client that starts CIBA when Vault bound_claims require a fresh human approval before minting read creds",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "ciba-client-secret",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["openid", "profile", "roles"],
+      "optionalClientScopes": ["users.read"],
+      "attributes": {
+        "oidc.ciba.grant.enabled": "true",
+        "ciba.backchannel.token.delivery.mode": "poll"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "user-mcp",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "introspection.token.claim": "true",
+            "add.to.lightweight.access.token": "true"
+          }
+        },
+        {
+          "name": "ciba-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "ciba",
+            "claim.value": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "ciba-preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
           }
         }
       ]

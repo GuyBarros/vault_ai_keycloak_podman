@@ -12,6 +12,7 @@ from auth.context import (
     current_obo_user,
     current_vault_action_token,
 )
+from ciba_client import CibaClient
 from errors import AppError
 from logging_utils import bind_log_context, log_event
 from models import UserRecord
@@ -92,6 +93,7 @@ class PostgresUserRepository(UserRepository):
         vault_spiffe_workload_role: str = "",
         vault_action_read_role: str = "user-mcp-action-read",
         vault_action_write_role: str = "user-mcp-action-write",
+        ciba_client: CibaClient | None = None,
     ):
         if not pg_url:
             raise AppError(
@@ -159,6 +161,7 @@ class PostgresUserRepository(UserRepository):
         self._action_write_role = vault_action_write_role
         self._db_read_path = vault_db_read_path
         self._db_write_path = vault_db_write_path
+        self._ciba = ciba_client
         self._pool: asyncpg.Pool | None = None
 
     async def startup(self) -> None:
@@ -198,7 +201,7 @@ class PostgresUserRepository(UserRepository):
             self._pool = None
 
     @asynccontextmanager
-    async def _acquire(self) -> AsyncIterator[asyncpg.Connection]:
+    async def _acquire(self, *, write: bool = False) -> AsyncIterator[asyncpg.Connection]:
         if self._auth_mode == "direct":
             if self._pool is None:
                 raise AppError(500, "agent_error", "Postgres pool not initialized.")
@@ -231,7 +234,9 @@ class PostgresUserRepository(UserRepository):
             )
 
         scope = current_obo_scope.get(None) or ""
-        jwt_role, action_role, db_creds_path = self._select_vault_targets(scope)
+        jwt_role, action_role, db_creds_path = self._select_vault_targets(
+            scope, write=write
+        )
 
         assert self._vault is not None
         assert self._spiffe is not None
@@ -246,7 +251,7 @@ class PostgresUserRepository(UserRepository):
             self._spiffe_workload_role,
             jwt_path=self._spiffe_jwt_path,
         )
-        parent_token = await self._vault.login_with_jwt(obo_token, jwt_role)
+        parent_token = await self._login_human(obo_token, jwt_role, user)
         action_token = current_vault_action_token.get(None)
         if not action_token:
             display_name = f"{user}+user-mcp"
@@ -304,18 +309,78 @@ class PostgresUserRepository(UserRepository):
         finally:
             await conn.close()
 
-    def _select_vault_targets(self, scope: str) -> tuple[str, str, str]:
-        scopes = {part for part in scope.split() if part}
-        if _SCOPE_WRITE in scopes:
-            return self._jwt_write_role, self._action_write_role, self._db_write_path
-        if _SCOPE_READ in scopes:
-            return self._jwt_read_role, self._action_read_role, self._db_read_path
-        raise AppError(
-            403,
-            "invalid_request",
-            f"OBO token scope must include '{_SCOPE_READ}' or '{_SCOPE_WRITE}' "
-            f"to obtain database credentials.",
+    async def _login_human(self, obo_token: str, jwt_role: str, user: str) -> str:
+        """Login with the session OBO. List-users consults ACL policy
+        ciba-list-users for this human (ciba/list-users/<username>).
+        """
+        try:
+            parent = await self._vault.login_with_jwt(
+                obo_token, jwt_role, jwt_grant="session-obo"
+            )
+        except AppError as exc:
+            if jwt_role != self._jwt_read_role or not _vault_wants_ciba(exc):
+                raise
+            return await self._step_up_ciba(jwt_role, user, action="list-users")
+
+        if jwt_role != self._jwt_read_role:
+            return parent
+        if not await self._vault.ciba_required_by_policy(
+            parent, action="list-users", user=user
+        ):
+            return parent
+        return await self._step_up_ciba(jwt_role, user, action="list-users")
+
+    async def _step_up_ciba(
+        self, jwt_role: str, user: str, *, action: str
+    ) -> str:
+        if self._ciba is None:
+            raise AppError(
+                403,
+                "invalid_request",
+                f"Vault policy requires CIBA for action {action} but CIBA is "
+                "not configured on user-mcp. Approve URL: http://localhost:8093",
+            )
+        log_event(
+            LOGGER,
+            "vault_ciba_required",
+            level=logging.INFO,
+            message=(
+                f"Vault policy requires CIBA for action {action}; "
+                "starting Keycloak CIBA"
+            ),
+            vault_role=jwt_role,
+            preferred_username=user,
+            ciba_action=action,
         )
+        ciba_jwt = await self._ciba.fetch_access_token(
+            login_hint=user,
+            binding_message=action,
+        )
+        return await self._vault.login_with_jwt(
+            ciba_jwt, jwt_role, jwt_grant="ciba"
+        )
+
+    def _select_vault_targets(
+        self, scope: str, *, write: bool
+    ) -> tuple[str, str, str]:
+        scopes = {part for part in scope.split() if part}
+        if write:
+            if _SCOPE_WRITE not in scopes:
+                raise AppError(
+                    403,
+                    "invalid_request",
+                    f"OBO token scope must include '{_SCOPE_WRITE}' "
+                    "to obtain write database credentials.",
+                )
+            return self._jwt_write_role, self._action_write_role, self._db_write_path
+        if _SCOPE_READ not in scopes and _SCOPE_WRITE not in scopes:
+            raise AppError(
+                403,
+                "invalid_request",
+                f"OBO token scope must include '{_SCOPE_READ}' or '{_SCOPE_WRITE}' "
+                "to obtain database credentials.",
+            )
+        return self._jwt_read_role, self._action_read_role, self._db_read_path
 
     async def list_all(self) -> list[UserRecord]:
         async with self._acquire() as conn:
@@ -333,7 +398,7 @@ class PostgresUserRepository(UserRepository):
     async def create(self, user: UserRecord) -> UserRecord:
         params = _user_to_params(user)
         try:
-            async with self._acquire() as conn:
+            async with self._acquire(write=True) as conn:
                 row = await conn.fetchrow(
                     f"""
                     INSERT INTO users ({_SELECT})
@@ -351,7 +416,7 @@ class PostgresUserRepository(UserRepository):
         return UserRecord.model_validate(_row_to_dict(row))
 
     async def delete_by_email(self, email: str) -> UserRecord:
-        async with self._acquire() as conn:
+        async with self._acquire(write=True) as conn:
             row = await conn.fetchrow(
                 f"DELETE FROM users WHERE lower(email) = lower($1) RETURNING {_SELECT}",
                 email.strip(),
@@ -390,7 +455,7 @@ class PostgresUserRepository(UserRepository):
             f"RETURNING {_SELECT}"
         )
         try:
-            async with self._acquire() as conn:
+            async with self._acquire(write=True) as conn:
                 row = await conn.fetchrow(sql, *params)
         except asyncpg.UniqueViolationError as exc:
             raise AppError(
@@ -401,6 +466,13 @@ class PostgresUserRepository(UserRepository):
         if row is None:
             raise AppError(404, "invalid_request", f"User not found for email: {email}")
         return UserRecord.model_validate(_row_to_dict(row))
+
+
+def _vault_wants_ciba(exc: AppError) -> bool:
+    msg = (exc.message or "").lower()
+    return exc.status_code in (400, 403) and (
+        "bound claim" in msg or "validating claims" in msg or "does not match" in msg
+    )
 
 
 def _user_to_params(user: UserRecord) -> tuple[Any, ...]:

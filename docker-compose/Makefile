@@ -62,6 +62,9 @@ help:
 	@echo "  make build       Build local images for DOCKER_PLATFORM"
 	@echo "  make clear       Stop stack and delete volumes"
 	@echo "  make prove-obo-vault  Prove jwt-keycloak bound_claims (stack must be up)"
+	@echo "  make prove-ciba-vault Prove CIBA step-up on oidc-read (stack must be up)"
+	@echo "  make demo-status      One-shot checklist (web, vault, CIBA, phone)"
+	@echo "  make demo-status-watch  Same, refresh every 2s"
 
 # check-env validates that every required variable is set and non-empty.
 check-env:
@@ -93,8 +96,16 @@ clear:
 build:
 	docker compose build
 
-prove-obo-vault:
-	chmod +x ./prove-obo-vault-bound-claims.sh
-	./prove-obo-vault-bound-claims.sh
+prove-ciba-vault:
+	chmod +x ./prove-ciba-vault.sh
+	./prove-ciba-vault.sh
 
-.PHONY: all help check-env clear build prove-obo-vault
+demo-status:
+	chmod +x ./demo-status.sh
+	./demo-status.sh
+
+demo-status-watch:
+	chmod +x ./demo-status.sh
+	./demo-status.sh --watch
+
+.PHONY: all help check-env clear build prove-obo-vault prove-ciba-vault demo-status demo-status-watch

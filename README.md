@@ -71,6 +71,7 @@ make
 
 #### URLs
 WebApp UI: [localhost:8080](http://localhost:8080)  
+CIBA approval: [localhost:8093](http://localhost:8093)  
 Keycloak: [localhost:8081](http://localhost:8081)  
 LiteLLM: [localhost:4000/ui](http://localhost:4000/ui)  
 Vault: [localhost:8200](http://localhost:8200)
@@ -98,3 +99,5 @@ Login with email `user@demo.com` / password `user` if username `user` is rejecte
 
 OBS: This is a demo app to showcase Vault capabilities and was not extensively tested in terms of AI agent complex prompts. Plase use simple commands like *list*, *create*, *etc*. 
 For **create_user** tool, only first name and email are enforced. If the model complains, be specific.
+
+On `feat/vault-ciba-stepup`, **list users** is an action with its own ACL policy `ciba-list-users`. In the Vault UI (Access control → ACL policies) set `ciba/list-users/admin` and `ciba/list-users/user` to `read` (CIBA) or `deny` (silent OBO) independently. Create user is a different action and still uses the session OBO. Open [localhost:8093](http://localhost:8093) to Approve. The audit trail is at [localhost:8092](http://localhost:8092).

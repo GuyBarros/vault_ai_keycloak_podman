@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audit trail — outcome back to actor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f4f4f4;
+      --surface: #ffffff;
+      --ink: #161616;
+      --muted: #525252;
+      --line: #e0e0e0;
+      --human: #0f62fe;
+      --spiffe: #8a3ffc;
+      --and: #1192e8;
+      --action: #007d79;
+      --secrets: #198038;
+      --ciba: #9f1853;
+      --deny: #da1e28;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans", system-ui, sans-serif; }
+    header.app {
+      background: #161616; color: #f4f4f4;
+      padding: 1.25rem 1.5rem 1.1rem;
+      display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-end; flex-wrap: wrap;
+    }
+    header.app h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+    header.app p { margin: 0.35rem 0 0; color: #c6c6c6; font-size: 0.875rem; max-width: 46rem; }
+    header.app .meta { font-family: "IBM Plex Mono", monospace; font-size: 0.75rem; color: #a8a8a8; text-align: right; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
+    .identities { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.25rem; }
+    .id-card { background: var(--surface); border: 1px solid var(--line); padding: 0.85rem 1rem; }
+    .id-card .k { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.3rem; }
+    .id-card h2 { margin: 0 0 0.3rem; font-size: 0.9rem; }
+    .id-card p { margin: 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+    .id-card.human .k { color: var(--human); }
+    .id-card.spiffe .k { color: var(--spiffe); }
+    .id-card.action .k { color: var(--action); }
+    .id-card.ciba .k { color: var(--ciba); }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 1rem; }
+    label { font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+    select, button {
+      font: inherit; font-size: 0.85rem; border: 1px solid #8d8d8d; background: #fff; color: var(--ink);
+      padding: 0.4rem 0.6rem;
+    }
+    button { background: #0f62fe; color: #fff; border-color: #0f62fe; cursor: pointer; }
+    .status { font-family: "IBM Plex Mono", monospace; font-size: 0.75rem; color: var(--muted); margin-left: auto; }
+    .status.err { color: var(--deny); }
+    .req { background: var(--surface); border: 1px solid var(--line); margin-bottom: 1rem; }
+    .req.denied { border-left: 4px solid var(--deny); }
+    .req.ok { border-left: 4px solid var(--secrets); }
+    .verdict { padding: 0.95rem 1rem 0.7rem; border-bottom: 1px solid var(--line); }
+    .verdict .lbl { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .verdict h3 { margin: 0.25rem 0 0.45rem; font-size: 1.15rem; line-height: 1.3; }
+    .verdict.denied h3 { color: var(--deny); }
+    .reply {
+      margin: 0.5rem 0 0.65rem; padding: 0.75rem 0.85rem;
+      background: #f4f4f4; border: 1px solid var(--line);
+      max-height: 22rem; overflow: auto;
+    }
+    .reply p { margin: 0 0 0.5rem; font-size: 0.9rem; line-height: 1.4; }
+    .reply p:last-child { margin-bottom: 0; }
+    .reply table { border-collapse: collapse; width: 100%; font-size: 0.75rem; }
+    .reply th, .reply td {
+      border: 1px solid #c6c6c6; padding: 0.28rem 0.45rem; text-align: left;
+      font-family: "IBM Plex Mono", monospace; white-space: nowrap;
+    }
+    .reply th { background: #e0e0e0; font-weight: 600; }
+    .actor-line { font-size: 0.9rem; color: var(--ink); }
+    .actor-line strong { font-weight: 600; }
+    .prompt { font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+    .chip {
+      font-size: 0.68rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 0.18rem 0.4rem; border: 1px solid var(--line); color: #8d8d8d; background: #f4f4f4;
+    }
+    .chip.on.human { color: var(--human); border-color: var(--human); background: #edf5ff; }
+    .chip.on.spiffe { color: var(--spiffe); border-color: var(--spiffe); background: #f6f2ff; }
+    .chip.on.and { color: var(--and); border-color: var(--and); background: #e5f6ff; }
+    .chip.on.action { color: var(--action); border-color: var(--action); background: #d9fbfb; }
+    .chip.on.secrets { color: var(--secrets); border-color: var(--secrets); background: #defbe6; }
+    .chip.on.ciba { color: var(--ciba); border-color: var(--ciba); background: #fff0f6; }
+    .chip.on.deny { color: var(--deny); border-color: var(--deny); background: #fff1f1; }
+    .rid { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; color: var(--muted); float: right; text-align: right; }
+    .chain { list-style: none; margin: 0; padding: 0; }
+    .chain li {
+      display: grid; grid-template-columns: 7.2rem 1fr;
+      gap: 0.75rem; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line);
+      font-size: 0.85rem; align-items: start;
+    }
+    .step-title { font-weight: 500; line-height: 1.35; }
+    .facts {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
+      gap: 0.15rem 1.1rem; margin: 0.45rem 0 0;
+    }
+    .facts div {
+      display: grid; grid-template-columns: 8rem 1fr; gap: 0.35rem;
+      font-size: 0.72rem; font-family: "IBM Plex Mono", monospace;
+    }
+    .facts dt { margin: 0; color: var(--muted); font-weight: 400; }
+    .facts dd { margin: 0; color: var(--ink); word-break: break-word; }
+    .chain .why { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 0.15rem; }
+    .chain li.outcome .why { color: var(--secrets); }
+    .chain li.denied .why { color: var(--deny); }
+    .chain li.ciba .why { color: var(--ciba); }
+    .chain li.actor .why { color: var(--human); }
+    .chain .arrow { color: #8d8d8d; font-family: "IBM Plex Mono", monospace; font-size: 0.75rem; }
+    details { border-top: 1px solid var(--line); }
+    details summary {
+      cursor: pointer; padding: 0.55rem 1rem; font-size: 0.75rem; color: var(--muted);
+      list-style: none;
+    }
+    details summary::-webkit-details-marker { display: none; }
+    ol.tl { list-style: none; margin: 0; padding: 0 0 0.4rem; }
+    ol.tl li {
+      display: grid; grid-template-columns: 7.5rem 10.5rem 1fr;
+      gap: 0.75rem; padding: 0.5rem 1rem; border-top: 1px solid var(--line);
+      font-size: 0.78rem; align-items: start;
+    }
+    .t { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; color: var(--muted); }
+    .step { font-weight: 600; font-size: 0.75rem; }
+    .step.human { color: var(--human); }
+    .step.spiffe { color: var(--spiffe); }
+    .step.and { color: var(--and); }
+    .step.action { color: var(--action); }
+    .step.secrets { color: var(--secrets); }
+    .step.ciba { color: var(--ciba); }
+    .step.deny { color: var(--deny); }
+    .kv { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; color: var(--muted); }
+    .msg { color: var(--muted); margin-top: 0.15rem; }
+    .empty { padding: 1.5rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); }
+    @media (max-width: 1100px) {
+      .identities { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 800px) {
+      .identities { grid-template-columns: 1fr; }
+      .chain li, ol.tl li { grid-template-columns: 1fr; }
+      .rid { float: none; text-align: left; margin-bottom: 0.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app">
+    <div>
+      <h1>Audit trail — outcome back to the actor</h1>
+      <p>
+        Each request starts with what the user received from the agent (the listing,
+        the denial, the created user). Then the trail walks back through Vault —
+        including CIBA phone approval when policy <code>ciba-list-users</code>
+        requires it for that actor on that action —
+        to the human who asked.
+      </p>
+    </div>
+    <div class="meta">
+      Live Loki · newest outcome first<br />
+      user-mcp 172.28.0.20 · Control Groups AND
+    </div>
+  </header>
+  <div class="wrap">
+    <section class="identities" aria-label="Vault identities and CIBA step-up">
+      <article class="id-card action">
+        <div class="k">Outcome — action token</div>
+        <h2>Only identity that can call secrets</h2>
+        <p><code>database/creds</code> and Transform. Unwrap after the AND. CIDR-bound to user-mcp.</p>
+      </article>
+      <article class="id-card spiffe">
+        <div class="k">Because — workload</div>
+        <h2>SPIFFE authorizes the wrap</h2>
+        <p><code>spiffe://example.org/user-mcp</code> in group <code>user-mcp-workload</code>. Authorize only.</p>
+      </article>
+      <article class="id-card ciba">
+        <div class="k">Step-up — CIBA</div>
+        <h2>Vault refuses silent OBO reads</h2>
+        <p>ACL policy <code>ciba-list-users</code> is the list-users action. <code>read</code> on <code>ciba/list-users/admin</code> or <code>…/user</code> requires phone Approve for that human; <code>deny</code> is silent OBO.</p>
+      </article>
+      <article class="id-card human">
+        <div class="k">Actor — human</div>
+        <h2>JWT requests the mint</h2>
+        <p>Keycloak groups + scope. Mint-only. Alone, Vault returns a wrap, not a token.</p>
+      </article>
+    </section>
+
+    <div class="toolbar">
+      <label>Window
+        <select id="range">
+          <option value="900000">15 minutes</option>
+          <option value="3600000" selected>1 hour</option>
+          <option value="21600000">6 hours</option>
+        </select>
+      </label>
+      <label>Actor
+        <select id="user"><option value="">all</option></select>
+      </label>
+      <label><input type="checkbox" id="auto" checked /> auto-refresh</label>
+      <button type="button" id="reload">Refresh</button>
+      <span class="status" id="status">loading…</span>
+    </div>
+    <div id="list"></div>
+  </div>
+  <script>
+    const EVENTS = [
+      "agent_request_started",
+      "identity_broker_call",
+      "obo_token_exchange_completed",
+      "obo_token_exchange_authz_denied",
+      "scoped_tool_invoke",
+      "scoped_tool_token_exchange_failed",
+      "scoped_tool_invoke_failed",
+      "tool_invoked",
+      "tool_failed",
+      "jwt_validation_failed",
+      "vault_login_ok",
+      "vault_login_rejected",
+      "vault_ciba_required",
+      "ciba_started",
+      "ciba_approved",
+      "ciba_denied",
+      "vault_control_group_ok",
+      "vault_action_token_ok",
+      "vault_db_creds_issued",
+      "pii_masked",
+      "response_sent",
+      "request_failed",
+      "agent_execution_failed",
+    ];
+    const QUERY = `{container=~"ai-agent|user-mcp|token-exchange"} | json | event=~"${EVENTS.join("|")}"`;
+
+    const find = (events, pred) => events.find(pred);
+
+    function isSpiffeLogin(ev) {
+      return ev.event === "vault_login_ok" && String(ev.jwt_path || "").includes("spiffe");
+    }
+    function isHumanLogin(ev) {
+      return ev.event === "vault_login_ok" && !isSpiffeLogin(ev);
+    }
+    function isDenied(ev) {
+      const e = ev.event || "";
+      if (e === "vault_login_rejected" || e === "vault_ciba_required") return false;
+      return /fail|denied|error/i.test(e);
+    }
+
+    function requestUsedCiba(events) {
+      return (events || []).some((e) =>
+        e.event === "ciba_approved" ||
+        e.event === "ciba_started" ||
+        e.event === "vault_ciba_required" ||
+        e.jwt_grant === "ciba"
+      );
+    }
+
+    function classify(ev, events) {
+      const e = ev.event || "";
+      if (e === "response_sent") return { step: "Agent reply to user", cls: "human", ident: "human" };
+      if (e === "vault_db_creds_issued" || e === "pii_masked") return { step: "Secrets used", cls: "secrets", ident: "secrets" };
+      if (e === "vault_action_token_ok") return { step: "Action token unwrapped", cls: "action", ident: "action" };
+      if (e === "vault_control_group_ok") return { step: "SPIFFE authorized AND", cls: "and", ident: "and" };
+      if (isSpiffeLogin(ev)) return { step: "Workload attested", cls: "spiffe", ident: "spiffe" };
+      if (e === "ciba_approved") return { step: "Human approved CIBA", cls: "ciba", ident: "ciba" };
+      if (e === "ciba_started") return { step: "CIBA waiting on phone", cls: "ciba", ident: "ciba" };
+      if (e === "vault_ciba_required" || e === "vault_login_rejected") {
+        return { step: "Vault required CIBA", cls: "ciba", ident: "ciba" };
+      }
+      if (e === "ciba_denied") return { step: "Human denied CIBA", cls: "deny", ident: "deny" };
+      if (isHumanLogin(ev)) {
+        if (ev.jwt_grant === "session-obo") {
+          return { step: "Session OBO login", cls: "human", ident: "human" };
+        }
+        if (ev.jwt_grant === "ciba" || requestUsedCiba(events)) {
+          return { step: "CIBA JWT requested mint", cls: "ciba", ident: "ciba" };
+        }
+        return { step: "Human requested mint", cls: "human", ident: "human" };
+      }
+      if (e === "obo_token_exchange_authz_denied") return { step: "OBO denied", cls: "deny", ident: "deny" };
+      if (e === "identity_broker_call" || e === "obo_token_exchange_completed") return { step: "OBO issued", cls: "human", ident: "human" };
+      if (e.startsWith("scoped_tool") && isDenied(ev)) return { step: "Tool denied", cls: "deny", ident: "deny" };
+      if (e.startsWith("scoped_tool") || e === "tool_invoked") return { step: "Agent invoked tool", cls: "human", ident: "human" };
+      if (e === "jwt_validation_failed" || e === "tool_failed") return { step: "MCP denied", cls: "deny", ident: "deny" };
+      if (e === "agent_execution_failed" || e === "request_failed") return { step: "LLM failed", cls: "deny", ident: "deny" };
+      if (e === "agent_request_started") return { step: "Human asked", cls: "human", ident: "human" };
+      return { step: e, cls: isDenied(ev) ? "deny" : "", ident: isDenied(ev) ? "deny" : "" };
+    }
+
+    function isTableSep(line) {
+      return /^\s*\|?\s*:?-{3,}/.test(line);
+    }
+
+    function splitRow(line) {
+      return line.split("|").map((c) => c.trim()).filter((c, i, a) => !((i === 0 || i === a.length - 1) && c === ""));
+    }
+
+    function renderReply(text) {
+      const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+      let html = "";
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        const next = lines[i + 1] || "";
+        if (line.includes("|") && isTableSep(next)) {
+          const rows = [];
+          while (i < lines.length && lines[i].includes("|")) {
+            if (!isTableSep(lines[i])) rows.push(splitRow(lines[i]));
+            i += 1;
+          }
+          if (rows.length) {
+            const head = rows[0];
+            const body = rows.slice(1);
+            html += "<table><thead><tr>" + head.map((c) => "<th>" + escapeHtml(c) + "</th>").join("") + "</tr></thead>";
+            if (body.length) {
+              html += "<tbody>" + body.map((r) => "<tr>" + r.map((c) => "<td>" + escapeHtml(c) + "</td>").join("") + "</tr>").join("") + "</tbody>";
+            }
+            html += "</table>";
+          }
+          continue;
+        }
+        if (line.trim()) html += "<p>" + escapeHtml(line) + "</p>";
+        i += 1;
+      }
+      return html || "<p>(empty reply)</p>";
+    }
+
+    function story(eventsNewestFirst) {
+      const evs = eventsNewestFirst;
+      const replyEv = find(evs, (e) => e.event === "response_sent" && e.response_text);
+      const creds = find(evs, (e) => e.event === "vault_db_creds_issued");
+      const pii = find(evs, (e) => e.event === "pii_masked");
+      const action = find(evs, (e) => e.event === "vault_action_token_ok");
+      const cg = find(evs, (e) => e.event === "vault_control_group_ok");
+      const spiffe = find(evs, isSpiffeLogin);
+      const cibaJwt = find(evs, (e) => isHumanLogin(e) && e.jwt_grant === "ciba");
+      const sessionObo = find(evs, (e) => isHumanLogin(e) && e.jwt_grant === "session-obo");
+      const humanJwt = cibaJwt || sessionObo || find(evs, isHumanLogin);
+      const cibaRequired = find(evs, (e) => e.event === "vault_ciba_required");
+      const cibaApproved = find(evs, (e) => e.event === "ciba_approved");
+      const cibaStarted = find(evs, (e) => e.event === "ciba_started" || e.event === "vault_ciba_required");
+      const cibaDenied = find(evs, (e) => e.event === "ciba_denied");
+      const deny = find(evs, isDenied);
+      const toolFail = find(evs, (e) => e.event === "tool_failed" || e.event === "scoped_tool_invoke_failed");
+      const tool = find(evs, (e) => e.event === "tool_invoked" || e.event === "scoped_tool_invoke");
+      const obo = find(evs, (e) => e.event === "obo_token_exchange_completed" || e.event === "identity_broker_call");
+      const ask = find(evs, (e) => e.event === "agent_request_started");
+      const llmFail = find(evs, (e) => e.event === "agent_execution_failed" || e.event === "request_failed");
+      const user = evs.map((e) => e.preferred_username).find(Boolean) || "unknown";
+      const toolName = evs.map((e) => e.tool).find(Boolean) || "";
+      const dbUser = evs.map((e) => e.db_username).find(Boolean) || "";
+      const cibaAction = (cibaRequired && cibaRequired.ciba_action) || "list-users";
+      const prompt = (ask && ask.user_message) || (replyEv && replyEv.user_message) || "";
+      const reply = (replyEv && replyEv.response_text)
+        || (llmFail && (llmFail.error_message || llmFail.message))
+        || "";
+      const denied = !!(!creds && (toolFail || deny || llmFail)) ||
+        /unable|permission denied|don’t have the necessary|don't have the necessary|cannot invoke/i.test(reply);
+
+      const chain = [];
+      if (pii) {
+        chain.push({ kind: "because", why: "because", text: "Transform masked PII before the agent answered" });
+      }
+      if (creds) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: dbUser
+            ? `Vault issued dynamic DB user ${dbUser}`
+            : `Vault issued database/creds (${creds.creds_path || "role"})`,
+        });
+      }
+      if (action) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: `combined action token unwrapped (${action.display_name || action.vault_role || "user-mcp-action"})`,
+        });
+      }
+      if (cg) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: "SPIFFE member of user-mcp-workload authorized the control group (Vault AND)",
+        });
+      }
+      if (spiffe) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: `workload attested as ${spiffe.workload_spiffe_id || "spiffe://example.org/user-mcp"}`,
+        });
+      }
+      if (cibaJwt || cibaApproved) {
+        chain.push({
+          kind: "ciba",
+          why: "because",
+          text: `CIBA JWT requested the mint (${(cibaJwt || humanJwt || {}).vault_role || "user-mcp-oidc-read"})`,
+        });
+      }
+      if (cibaApproved) {
+        chain.push({
+          kind: "ciba",
+          why: "because",
+          text: "human approved CIBA on the phone (Keycloak issued a fresh JWT)",
+        });
+      }
+      if (cibaStarted) {
+        chain.push({
+          kind: "ciba",
+          why: "because",
+          text: `Vault policy ciba-list-users required CIBA for ${user} on ${cibaAction}`,
+        });
+      }
+      if (cibaDenied) {
+        chain.push({
+          kind: "denied",
+          why: "because",
+          text: "human denied CIBA on the phone",
+        });
+      }
+      if (sessionObo) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: `session OBO logged in (${sessionObo.vault_role || "user-mcp-oidc-read"})`,
+        });
+      } else if (humanJwt && !cibaJwt) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: `human JWT requested the mint (${humanJwt.vault_role || "jwt-keycloak"})`,
+        });
+      }
+      if (obo) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: `OBO issued for ${obo.scope || obo.auth_scope || "delegated scope"}`,
+        });
+      }
+      if ((toolFail || deny) && denied) {
+        chain.push({
+          kind: "denied",
+          why: "because",
+          text: (toolFail || deny).error_message || (toolFail || deny).error || (toolFail || deny).message || (toolFail || deny).event,
+        });
+      }
+      if (tool) {
+        chain.push({
+          kind: "because",
+          why: "because",
+          text: `agent invoked ${tool.tool || toolName}`,
+        });
+      }
+      chain.push({
+        kind: "actor",
+        why: "Actor",
+        text: `${user} asked the agent` + (prompt ? `: ${prompt}` : toolName ? ` to run ${toolName}` : ""),
+      });
+
+      return { reply, denied, user, toolName, prompt, chain };
+    }
+
+    function fmtTime(ns) {
+      const ms = Number(BigInt(ns) / 1000000n);
+      return new Date(ms).toISOString().slice(11, 23) + "Z";
+    }
+
+    function kv(ev) {
+      const bits = [];
+      if (ev.preferred_username) bits.push("user=" + ev.preferred_username);
+      if (ev.tool) bits.push("tool=" + ev.tool);
+      if (ev.vault_role) bits.push("role=" + ev.vault_role);
+      if (ev.jwt_path) bits.push("path=" + ev.jwt_path);
+      if (ev.auth_scope) bits.push("scope=" + ev.auth_scope);
+      if (ev.scope && !ev.auth_scope) bits.push("scope=" + ev.scope);
+      if (ev.db_username) bits.push("db=" + ev.db_username);
+      if (ev.creds_path) bits.push("creds=" + ev.creds_path);
+      if (ev.workload_spiffe_id) bits.push("spiffe=" + ev.workload_spiffe_id);
+      if (ev.control_group) bits.push("cg=" + ev.control_group);
+      if (ev.display_name) bits.push("display=" + ev.display_name);
+      if (ev.jwt_grant) bits.push("grant=" + ev.jwt_grant);
+      if (ev.ciba_action) bits.push("action=" + ev.ciba_action);
+      if (ev.binding_message) bits.push("binding=" + ev.binding_message);
+      if (ev.login_hint) bits.push("hint=" + ev.login_hint);
+      return bits.join("  ");
+    }
+
+    function parseLine(line) {
+      try { return JSON.parse(line); } catch { return null; }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function load() {
+      const status = document.getElementById("status");
+      const range = Number(document.getElementById("range").value);
+      const end = `${Date.now()}000000`;
+      const start = `${Date.now() - range}000000`;
+      const params = new URLSearchParams({
+        query: QUERY, start, end, limit: "800", direction: "backward",
+      });
+      status.textContent = "querying Loki…";
+      status.className = "status";
+      let payload;
+      try {
+        const res = await fetch("/loki/api/v1/query_range?" + params.toString());
+        if (!res.ok) throw new Error("Loki HTTP " + res.status);
+        payload = await res.json();
+      } catch (err) {
+        status.textContent = String(err.message || err);
+        status.className = "status err";
+        return;
+      }
+
+      const rows = [];
+      for (const stream of payload.data?.result || []) {
+        const container = stream.stream?.container || "";
+        for (const [ts, line] of stream.values || []) {
+          const ev = parseLine(line);
+          if (!ev || !ev.event) continue;
+          ev._ts = ts;
+          ev._container = container;
+          rows.push(ev);
+        }
+      }
+      rows.sort((a, b) => (a._ts < b._ts ? 1 : -1));
+
+      const users = [...new Set(rows.map((r) => r.preferred_username).filter(Boolean))].sort();
+      const userSel = document.getElementById("user");
+      const currentUser = userSel.value;
+      userSel.innerHTML = '<option value="">all</option>' + users.map((u) => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join("");
+      if (users.includes(currentUser)) userSel.value = currentUser;
+
+      const filterUser = userSel.value;
+      const filtered = filterUser ? rows.filter((r) => r.preferred_username === filterUser) : rows;
+
+      const groups = new Map();
+      for (const ev of filtered) {
+        const id = ev.request_id || "(no request_id)";
+        if (!groups.has(id)) groups.set(id, []);
+        groups.get(id).push(ev);
+      }
+
+      const list = document.getElementById("list");
+      if (!groups.size) {
+        list.innerHTML = '<div class="empty">No story events in this window. Ask the agent to list users, then refresh.</div>';
+        status.textContent = `0 events · ${new Date().toISOString().slice(11, 19)}Z`;
+        return;
+      }
+
+      const cards = [];
+      for (const [rid, events] of groups) {
+        events.sort((a, b) => (a._ts < b._ts ? 1 : -1));
+        const s = story(events);
+        if (!s.reply && !events.some((e) => e.event === "agent_request_started")) {
+          continue;
+        }
+        const idents = new Set(events.map((e) => classify(e, events).ident).filter(Boolean));
+        const chips = ["secrets", "action", "and", "spiffe", "ciba", "human", "deny"]
+          .filter((k) => k !== "deny" || idents.has("deny"))
+          .map((k) => `<span class="chip ${idents.has(k) ? "on " + k : ""}">${k === "and" ? "AND" : k}</span>`)
+          .join("");
+        const chain = s.chain.map((row) => {
+          const prefix = row.kind === "actor" ? "" : `<span class="arrow">↑ </span>`;
+          return `<li class="${row.kind}">
+            <div class="why">${escapeHtml(row.why)}</div>
+            <div>${prefix}${escapeHtml(row.text)}</div>
+          </li>`;
+        }).join("");
+        const raw = events.map((ev) => {
+          const c = classify(ev, events);
+          const msg = ev.message ? `<div class="msg">${escapeHtml(String(ev.message))}</div>` : "";
+          return `<li>
+            <div class="t">${fmtTime(ev._ts)}<br />${escapeHtml(ev._container)}</div>
+            <div class="step ${c.cls}">${escapeHtml(c.step)}</div>
+            <div>
+              <div class="kv">${escapeHtml(ev.event)}${kv(ev) ? " · " + escapeHtml(kv(ev)) : ""}</div>
+              ${msg}
+            </div>
+          </li>`;
+        }).join("");
+        const replyHtml = s.reply
+          ? `<div class="reply">${renderReply(s.reply)}</div>`
+          : `<p class="prompt">No agent reply captured for this request_id (tool-only / broker event).</p>`;
+        cards.push(`<article class="req ${s.denied ? "denied" : "ok"}">
+          <div class="verdict ${s.denied ? "denied" : ""}">
+            <div class="rid">${escapeHtml(rid)}<br />${events.length} events · ${fmtTime(events[0]._ts)}</div>
+            <div class="lbl">${s.denied ? "What the user received — denied" : "What the user received"}</div>
+            ${replyHtml}
+            <div class="actor-line">Actor: <strong>${escapeHtml(s.user)}</strong>${s.toolName ? " · " + escapeHtml(s.toolName) : ""}</div>
+            <div class="chips">${chips}</div>
+          </div>
+          <ol class="chain">${chain}</ol>
+          <details>
+            <summary>Raw events, newest first (${events.length})</summary>
+            <ol class="tl">${raw}</ol>
+          </details>
+        </article>`);
+      }
+      list.innerHTML = cards.join("");
+      status.textContent = `${filtered.length} events · ${groups.size} requests · ${new Date().toISOString().slice(11, 19)}Z`;
+    }
+
+    document.getElementById("reload").addEventListener("click", load);
+    document.getElementById("range").addEventListener("change", load);
+    document.getElementById("user").addEventListener("change", load);
+    setInterval(() => { if (document.getElementById("auto").checked) load(); }, 5000);
+    load();
+  </script>
+</body>
+</html>
