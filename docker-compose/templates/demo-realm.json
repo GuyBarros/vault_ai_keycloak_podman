@@ -132,7 +132,7 @@
     {
       "clientId": "ciba-client",
       "name": "ciba-client",
-      "description": "Confidential client that starts CIBA when Vault bound_claims require a fresh human approval before minting read creds",
+      "description": "Confidential client that starts CIBA when Vault bound_claims require a fresh human approval before minting write creds",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "secret": "ciba-client-secret",
@@ -144,7 +144,7 @@
       "serviceAccountsEnabled": false,
       "fullScopeAllowed": false,
       "defaultClientScopes": ["openid", "profile", "roles"],
-      "optionalClientScopes": ["users.read"],
+      "optionalClientScopes": ["users.write"],
       "attributes": {
         "oidc.ciba.grant.enabled": "true",
         "ciba.backchannel.token.delivery.mode": "poll"

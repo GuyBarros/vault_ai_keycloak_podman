@@ -189,7 +189,7 @@ _PAGE = """<!DOCTYPE html>
   <h1>Approve the agent action</h1>
   <p class="muted">Vault will not mint database credentials until you approve.
      On the Android emulator this page is <code>http://10.0.2.2:8093</code>.
-     Ask <b>list users</b> in the chat, then approve here.</p>
+     Ask to <b>create a user</b> in the chat, then approve here.</p>
   <div id="list"><p class="muted">Waiting for a CIBA request…</p></div>
   <script>
     async function load() {

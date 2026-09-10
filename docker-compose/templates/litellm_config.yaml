@@ -1,8 +1,8 @@
 model_list:
   - model_name: default
     litellm_params:
-      model: anthropic/claude-sonnet-4-5
-      api_key: "os.environ/ANTHROPIC_API_KEY"
+      model: ollama_chat/qwen2.5:7b
+      api_base: "http://host.docker.internal:11434"
       timeout: 120
 
 mcp_servers:

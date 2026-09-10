@@ -53,15 +53,15 @@ ctr_line() {
 ciba_cap() {
   _user=$1
   _pol=$(docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root vault \
-    vault policy read ciba-list-users 2>/dev/null || true)
+    vault policy read ciba-create-user 2>/dev/null || true)
   _block=$(printf '%s\n' "$_pol" | awk -v u="$_user" '
-    $0 ~ "ciba/list-users/" u {p=1}
+    $0 ~ "ciba/create-user/" u {p=1}
     p && /capabilities/ {print; exit}
   ')
   case "$_block" in
-    *read*) ok "CIBA list-users/$_user  (read → phone Approve)" ;;
-    *deny*) warn "CIBA list-users/$_user  (deny → silent OBO)" ;;
-    *)      bad "CIBA list-users/$_user  (policy missing)" ;;
+    *read*) ok "CIBA create-user/$_user  (read → phone Approve)" ;;
+    *deny*) warn "CIBA create-user/$_user  (deny → silent OBO)" ;;
+    *)      bad "CIBA create-user/$_user  (policy missing)" ;;
   esac
 }
 
@@ -108,10 +108,15 @@ once() {
   else
     bad "SPIRE workload socket"
   fi
-  if docker exec vault-agent grep -q '^ANTHROPIC_API_KEY=sk-ant-' /vault/secrets/litellm.env 2>/dev/null; then
-    ok "LiteLLM Anthropic key rendered"
+  if docker exec vault-agent grep -q '^LITELLM_MASTER_KEY=' /vault/secrets/litellm.env 2>/dev/null; then
+    ok "LiteLLM master key rendered"
   else
-    bad "LiteLLM Anthropic key  (vault-agent / litellm.env)"
+    bad "LiteLLM master key  (vault-agent / litellm.env)"
+  fi
+  if curl -sS --connect-timeout 1 --max-time 2 http://localhost:11434/api/tags 2>/dev/null | grep -q '"qwen2.5:7b"'; then
+    ok "Ollama qwen2.5:7b reachable  (localhost:11434)"
+  else
+    bad "Ollama qwen2.5:7b unreachable  (run: ollama serve / ollama pull qwen2.5:7b)"
   fi
   if docker exec user-mcp grep -q 'ciba_required_by_policy' /app/storage/postgres_repo.py 2>/dev/null; then
     ok "user-mcp image has CIBA ACL probe"

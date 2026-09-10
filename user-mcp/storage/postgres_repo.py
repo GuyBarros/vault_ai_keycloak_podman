@@ -310,25 +310,25 @@ class PostgresUserRepository(UserRepository):
             await conn.close()
 
     async def _login_human(self, obo_token: str, jwt_role: str, user: str) -> str:
-        """Login with the session OBO. List-users consults ACL policy
-        ciba-list-users for this human (ciba/list-users/<username>).
+        """Login with the session OBO. Create-user consults ACL policy
+        ciba-create-user for this human (ciba/create-user/<username>).
         """
         try:
             parent = await self._vault.login_with_jwt(
                 obo_token, jwt_role, jwt_grant="session-obo"
             )
         except AppError as exc:
-            if jwt_role != self._jwt_read_role or not _vault_wants_ciba(exc):
+            if jwt_role != self._jwt_write_role or not _vault_wants_ciba(exc):
                 raise
-            return await self._step_up_ciba(jwt_role, user, action="list-users")
+            return await self._step_up_ciba(jwt_role, user, action="create-user")
 
-        if jwt_role != self._jwt_read_role:
+        if jwt_role != self._jwt_write_role:
             return parent
         if not await self._vault.ciba_required_by_policy(
-            parent, action="list-users", user=user
+            parent, action="create-user", user=user
         ):
             return parent
-        return await self._step_up_ciba(jwt_role, user, action="list-users")
+        return await self._step_up_ciba(jwt_role, user, action="create-user")
 
     async def _step_up_ciba(
         self, jwt_role: str, user: str, *, action: str

@@ -107,15 +107,17 @@ class Settings(BaseSettings):
         default=10.0, alias="USER_MCP_VAULT_TIMEOUT_SECONDS"
     )
 
-    # Keycloak CIBA — list-users checks ACL policy ciba-list-users per actor
-    # (ciba/list-users/<username>). Write actions still use session OBO.
+    # Keycloak CIBA — create-user checks ACL policy ciba-create-user per actor
+    # (ciba/create-user/<username>). Read actions still use session OBO.
+    # ciba_scope must carry users.write so the CIBA-issued JWT still matches
+    # user-mcp-oidc-write's bound_claims after approval.
     ciba_keycloak_url: str = Field(
         default="http://keycloak:8080", alias="USER_MCP_CIBA_KEYCLOAK_URL"
     )
     ciba_realm: str = Field(default="demo", alias="USER_MCP_CIBA_REALM")
     ciba_client_id: str = Field(default="", alias="USER_MCP_CIBA_CLIENT_ID")
     ciba_client_secret: str = Field(default="", alias="USER_MCP_CIBA_CLIENT_SECRET")
-    ciba_scope: str = Field(default="openid users.read", alias="USER_MCP_CIBA_SCOPE")
+    ciba_scope: str = Field(default="openid users.write", alias="USER_MCP_CIBA_SCOPE")
     ciba_poll_timeout_seconds: float = Field(
         default=110.0, alias="USER_MCP_CIBA_POLL_TIMEOUT_SECONDS"
     )

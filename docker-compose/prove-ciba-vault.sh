@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prove ACL policy ciba-list-users is the list-users CIBA switch per actor.
+# Prove ACL policy ciba-create-user is the create-user CIBA switch per actor.
 set -eu
 
 KC_URL="${KC_URL:-http://localhost:8081}"
@@ -73,7 +73,7 @@ vault_ciba_switch() {
   docker exec -e V_JWT="${_jwt}" -e V_USER="${_user}" user-mcp \
     /app/.venv/bin/python -c '
 import json, os, urllib.request
-login = json.dumps({"role": "user-mcp-oidc-read", "jwt": os.environ["V_JWT"]}).encode()
+login = json.dumps({"role": "user-mcp-oidc-write", "jwt": os.environ["V_JWT"]}).encode()
 req = urllib.request.Request(
     "http://vault:8200/v1/auth/jwt-keycloak/login",
     data=login,
@@ -82,7 +82,7 @@ req = urllib.request.Request(
 )
 with urllib.request.urlopen(req, timeout=10) as resp:
     token = json.loads(resp.read())["auth"]["client_token"]
-path = "ciba/list-users/" + os.environ["V_USER"]
+path = "ciba/create-user/" + os.environ["V_USER"]
 cap_req = urllib.request.Request(
     "http://vault:8200/v1/sys/capabilities-self",
     data=json.dumps({"paths": [path]}).encode(),
@@ -96,35 +96,36 @@ print("read" if ("read" in caps and "deny" not in caps) else "deny")
 '
 }
 
-echo "--- session OBO can assume oidc-read; ciba-list-users is per actor ---"
+echo "--- session OBO can assume oidc-read (list/search stay silent OBO) ---"
 USER_READ=$(kc_password user user "openid users.read")
 STATUS=$(vault_login_mcp "${USER_READ}" user-mcp-oidc-read)
 expect "reader OBO allowed on oidc-read" "${STATUS}" "200"
 
-ADMIN_READ=$(kc_password admin admin "openid users.read users.write")
-STATUS=$(vault_login_mcp "${ADMIN_READ}" user-mcp-oidc-read)
-expect "writer OBO allowed on oidc-read" "${STATUS}" "200"
-SWITCH=$(vault_ciba_switch "${ADMIN_READ}" admin)
-if [ "${SWITCH}" = "read" ]; then
-  echo "PASS  ciba/list-users/admin is read (CIBA on for admin list-users)"
-  pass=$((pass + 1))
-else
-  echo "FAIL  ciba/list-users/admin (got ${SWITCH}, want read)"
-  fail=$((fail + 1))
-fi
-
-echo "--- write role still accepts session OBO ---"
+echo "--- session OBO can assume oidc-write; ciba-create-user is per actor ---"
 ADMIN_WRITE=$(kc_password admin admin "openid users.write")
 STATUS=$(vault_login_mcp "${ADMIN_WRITE}" user-mcp-oidc-write)
 expect "writer OBO allowed on oidc-write" "${STATUS}" "200"
+SWITCH=$(vault_ciba_switch "${ADMIN_WRITE}" admin)
+if [ "${SWITCH}" = "read" ]; then
+  echo "PASS  ciba/create-user/admin is read (CIBA on for admin create-user)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  ciba/create-user/admin (got ${SWITCH}, want read)"
+  fail=$((fail + 1))
+fi
 
-echo "--- CIBA approve then oidc-read ---"
+echo "--- read role still accepts session OBO ---"
+ADMIN_READ=$(kc_password admin admin "openid users.read users.write")
+STATUS=$(vault_login_mcp "${ADMIN_READ}" user-mcp-oidc-read)
+expect "writer OBO allowed on oidc-read" "${STATUS}" "200"
+
+echo "--- CIBA approve then oidc-write ---"
 CIBA_START=$(curl -sS -X POST "${KC_URL}/realms/demo/protocol/openid-connect/ext/ciba/auth" \
   -d "client_id=${CIBA_ID}" \
   -d "client_secret=${CIBA_SECRET}" \
   -d "login_hint=admin" \
-  -d "scope=openid users.read" \
-  -d "binding_message=prove-ciba-list-users")
+  -d "scope=openid users.write" \
+  -d "binding_message=prove-ciba-create-user")
 AUTH_REQ_ID=$(printf '%s' "${CIBA_START}" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
@@ -161,8 +162,8 @@ if [ -z "${CIBA_JWT}" ]; then
 else
   echo "PASS  CIBA token issued after approve"
   pass=$((pass + 1))
-  STATUS=$(vault_login_mcp "${CIBA_JWT}" user-mcp-oidc-read)
-  expect "CIBA JWT allowed on oidc-read" "${STATUS}" "200"
+  STATUS=$(vault_login_mcp "${CIBA_JWT}" user-mcp-oidc-write)
+  expect "CIBA JWT allowed on oidc-write" "${STATUS}" "200"
 fi
 
 echo ""

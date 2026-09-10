@@ -132,10 +132,6 @@ services:
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: root
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      WATSONX_API_KEY: ${WATSONX_API_KEY:-}
-      WATSONX_PROJECT_ID: ${WATSONX_PROJECT_ID:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-ibm123}
     entrypoint: /bin/sh
     command: /vault-setup/vault-setup.sh
@@ -653,7 +649,15 @@ networks:
         # jwt-keycloak / user-mcp SPIFFE tokens to be used only from that
         # workload — a stolen OBO JWT presented on localhost:8200 cannot
         # mint database/creds.
+        #
+        # ip_range confines auto-assigned (non-pinned) containers to
+        # 172.28.1.0/24, keeping 172.28.0.0/24 free for static addresses.
+        # Without this, IPAM hands out low addresses like .20 to whichever
+        # dynamic container is created first — depends_on ordering makes
+        # that non-deterministic — and user-mcp's later, pinned request
+        # for .20 then fails with "already allocated".
         - subnet: 172.28.0.0/16
+          ip_range: 172.28.1.0/24
 
 volumes:
   spire-data:

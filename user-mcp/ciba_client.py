@@ -121,7 +121,7 @@ class CibaClient:
                         403,
                         "invalid_request",
                         "CIBA was denied or expired. Approve the request at "
-                        f"{self._approve_url} and retry list users.",
+                        f"{self._approve_url} and retry.",
                     )
                 raise AppError(
                     502,
@@ -140,7 +140,7 @@ class CibaClient:
 def _binding_message(text: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in text)
     cleaned = cleaned.strip("-")[:50]
-    return cleaned or "list-users"
+    return cleaned or "ciba-request"
 
 
 def _json(resp: httpx.Response) -> dict:
