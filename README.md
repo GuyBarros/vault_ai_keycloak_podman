@@ -101,3 +101,13 @@ OBS: This is a demo app to showcase Vault capabilities and was not extensively t
 For **create_user** tool, only first name and email are enforced. If the model complains, be specific.
 
 On `feat/vault-ciba-stepup`, **create user** is an action with its own ACL policy `ciba-create-user`. In the Vault UI (Access control → ACL policies) set `ciba/create-user/admin` and `ciba/create-user/user` to `read` (CIBA) or `deny` (silent OBO) independently. List/search users are different actions and still use the session OBO. Open [localhost:8093](http://localhost:8093) to Approve. The audit trail is at [localhost:8092](http://localhost:8092).
+
+### Level of Assurance (LoA)
+
+Tokens now carry a `loa` claim reflecting how the human authenticated:
+
+- **`loa: 1`** — plain password login, issued via the `token-exchange` client (used by the OBO/session flow).
+- **`loa: 2`** — password **and** a valid TOTP code, issued via the `mfa-client` client for the `mfa-user` test account (password `mfa-user`, OTP secret `JBSWY3DPEHPK3PXP`). Keycloak's built-in Direct Grant flow refuses to issue a token from `mfa-client` at all unless a correct `totp` form field is supplied, since `mfa-user` has an OTP credential configured — the claim isn't self-reported, it's a consequence of what Keycloak actually verified.
+- **`loa: 2`** — also on the token minted via `ciba-client` after a human approves a step-up request at [localhost:8093](http://localhost:8093). The CIBA-approved token is a *separate* token from the original session/OBO token — the session token you see client-side stays at `loa: 1` forever, since CIBA elevation happens server-side, purely for the Vault login on that one call. `user-mcp` logs the decoded `loa` on the `vault_ciba_approved` event so you can see it happen (e.g. `docker logs user-mcp | grep vault_ciba_approved`).
+
+Run `make prove-loa` (stack must be up) to verify the password/MFA paths end to end, including the negative cases (no OTP, wrong OTP); `make prove-ciba-vault` now also asserts `loa: 2` on the CIBA-approved token. This is not yet wired into a Vault `bound_claims` gate on any `user-mcp` action — today it proves the IdP/claim layer only, the same layer as `CT-01.1`/`CT-01.2` in the security test catalog.

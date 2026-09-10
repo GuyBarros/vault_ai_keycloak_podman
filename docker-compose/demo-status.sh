@@ -50,6 +50,30 @@ ctr_line() {
   esac
 }
 
+loa_claim() {
+  # Cheap live probe: password login via token-exchange should carry loa=1.
+  _body=$(curl -sS -m 3 -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" \
+    -d client_id=token-exchange -d client_secret=token-exchange-secret \
+    -d grant_type=password -d username=user -d password=user -d scope="openid users.read" 2>/dev/null || true)
+  _tok=$(printf '%s' "$_body" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("access_token",""))
+except Exception:
+    print("")' 2>/dev/null || true)
+  if [ -z "$_tok" ]; then
+    bad "LoA claim  (token-exchange login failed)"
+    return
+  fi
+  _loa=$(printf '%s' "$_tok" | python3 -c 'import sys,base64,json
+seg = sys.stdin.read().strip().split(".")[1]
+seg += "=" * (-len(seg) % 4)
+print(json.loads(base64.urlsafe_b64decode(seg)).get("loa",""))' 2>/dev/null || true)
+  case "$_loa" in
+    1) ok "LoA claim  (token-exchange issues loa=1)" ;;
+    *) bad "LoA claim  (expected loa=1, got '${_loa}')" ;;
+  esac
+}
+
 ciba_cap() {
   _user=$1
   _pol=$(docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=root vault \
@@ -118,6 +142,7 @@ once() {
   else
     bad "Ollama qwen2.5:7b unreachable  (run: ollama serve / ollama pull qwen2.5:7b)"
   fi
+  loa_claim
   if docker exec user-mcp grep -q 'ciba_required_by_policy' /app/storage/postgres_repo.py 2>/dev/null; then
     ok "user-mcp image has CIBA ACL probe"
   else

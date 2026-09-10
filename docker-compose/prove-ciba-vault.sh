@@ -164,6 +164,13 @@ else
   pass=$((pass + 1))
   STATUS=$(vault_login_mcp "${CIBA_JWT}" user-mcp-oidc-write)
   expect "CIBA JWT allowed on oidc-write" "${STATUS}" "200"
+  LOA=$(printf '%s' "${CIBA_JWT}" | python3 -c '
+import sys, base64, json
+seg = sys.stdin.read().strip().split(".")[1]
+seg += "=" * (-len(seg) % 4)
+print(json.loads(base64.urlsafe_b64decode(seg)).get("loa", ""))
+')
+  expect "CIBA-approved token carries loa=2" "${LOA}" "2"
 fi
 
 echo ""

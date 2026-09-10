@@ -60,6 +60,7 @@ help:
 	@echo "  make clear       Stop stack and delete volumes"
 	@echo "  make prove-obo-vault  Prove jwt-keycloak bound_claims (stack must be up)"
 	@echo "  make prove-ciba-vault Prove CIBA step-up on oidc-read (stack must be up)"
+	@echo "  make prove-loa        Prove the loa=1/loa=2 (password/MFA) claims (stack must be up)"
 	@echo "  make demo-status      One-shot checklist (web, vault, CIBA, phone)"
 	@echo "  make demo-status-watch  Same, refresh every 2s"
 
@@ -97,6 +98,10 @@ prove-ciba-vault:
 	chmod +x ./prove-ciba-vault.sh
 	./prove-ciba-vault.sh
 
+prove-loa:
+	chmod +x ./prove-loa.sh
+	./prove-loa.sh
+
 demo-status:
 	chmod +x ./demo-status.sh
 	./demo-status.sh
@@ -105,4 +110,4 @@ demo-status-watch:
 	chmod +x ./demo-status.sh
 	./demo-status.sh --watch
 
-.PHONY: all help check-env clear build prove-obo-vault prove-ciba-vault demo-status demo-status-watch
+.PHONY: all help check-env clear build prove-obo-vault prove-ciba-vault prove-loa demo-status demo-status-watch

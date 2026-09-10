@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 import asyncpg
+import jwt
 
 from auth.context import (
     current_obo_scope,
@@ -356,6 +357,18 @@ class PostgresUserRepository(UserRepository):
             login_hint=user,
             binding_message=action,
         )
+        log_event(
+            LOGGER,
+            "vault_ciba_approved",
+            level=logging.INFO,
+            message=f"CIBA approved for {action}; logging in to Vault with the elevated token",
+            vault_role=jwt_role,
+            preferred_username=user,
+            ciba_action=action,
+            # Unverified — logged for observability only. Vault independently
+            # verifies the signature on the login_with_jwt call below.
+            loa=_unverified_claim(ciba_jwt, "loa"),
+        )
         return await self._vault.login_with_jwt(
             ciba_jwt, jwt_role, jwt_grant="ciba"
         )
@@ -466,6 +479,14 @@ class PostgresUserRepository(UserRepository):
         if row is None:
             raise AppError(404, "invalid_request", f"User not found for email: {email}")
         return UserRecord.model_validate(_row_to_dict(row))
+
+
+def _unverified_claim(token: str, claim: str) -> Any:
+    """Read a claim without verifying the signature — for logging only."""
+    try:
+        return jwt.decode(token, options={"verify_signature": False}).get(claim)
+    except jwt.PyJWTError:
+        return None
 
 
 def _vault_wants_ciba(exc: AppError) -> bool:
