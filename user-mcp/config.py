@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     vault_spiffe_transform_role: str = Field(
         default="user-mcp-spiffe-transform", alias="USER_MCP_VAULT_SPIFFE_TRANSFORM_ROLE"
     )
+
     vault_db_read_path: str = Field(
         default="database/creds/user-mcp-read-role",
         alias="USER_MCP_VAULT_DB_READ_PATH",
@@ -192,6 +193,7 @@ def load_settings() -> Settings:
         pg_url_configured=bool(settings.pg_url) if settings.user_backend == "postgres" else None,
         db_auth_mode=settings.db_auth_mode if settings.user_backend == "postgres" else None,
         vault_addr=settings.vault_addr if settings.user_backend == "postgres" and settings.db_auth_mode == "vault" else None,
+        vault_keycloak_jwt_path=settings.vault_keycloak_jwt_path if settings.user_backend == "postgres" and settings.db_auth_mode == "vault" else None,
         verify_issuer=settings.effective_issuer or None,
         verify_audience=settings.audience or None,
         verify_jwks_url=settings.effective_jwks_url or None,

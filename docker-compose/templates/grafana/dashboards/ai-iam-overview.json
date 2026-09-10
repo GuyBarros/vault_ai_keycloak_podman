@@ -46,13 +46,13 @@
         "expr": "ceil(increase(vault_route_create_auth_jwt_keycloak__count[5m]))",
         "legendFormat": "Logins (5 m)"
       }],
-      "title": "User Logins (5 m)",
+      "title": "DB-Cred Logins (5 m)",
       "type": "stat"
     },
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Cumulative jwt-keycloak logins since stack start (user-mcp presenting the human OBO token).",
+      "description": "Cumulative Keycloak OBO logins against the jwt-keycloak mount since stack start. Each login = one user-mcp tool call that obtained DB credentials via an OBO token.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -69,7 +69,7 @@
         "expr": "vault_route_create_auth_jwt_keycloak__count",
         "legendFormat": "Total logins"
       }],
-      "title": "Total User Logins",
+      "title": "Total DB-Cred Logins",
       "type": "stat"
     },
 
@@ -128,7 +128,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Rate of user-mcp jwt-keycloak logins (human OBO) and ai-agent SPIFFE logins per minute.",
+      "description": "Rate of Vault logins per minute. jwt-keycloak = user-mcp DB-cred logins via OBO token (one per tool call). jwt-spiffe = ai-agent vault-agent renewals + TransformMasker PII logins.",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -148,7 +148,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
-          "legendFormat": "SPIFFE logins/s"
+          "legendFormat": "SPIFFE (ai-agent + transform) logins/s"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -156,7 +156,7 @@
           "legendFormat": "Auth token registrations/s"
         }
       ],
-      "title": "Web App Login Rate",
+      "title": "Vault Login Rate",
       "type": "timeseries"
     },
 
@@ -322,7 +322,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "SPIFFE logins (jwt-spiffe mount) = vault-agent/ai-agent renewing its SVID, plus user-mcp Transform (PII masking). Database credential logins use jwt-keycloak with the human OBO token — see the Session Audit OIDC panel.",
+      "description": "SPIFFE logins (jwt-spiffe mount) = vault-agent/ai-agent renewing its SVID plus TransformMasker PII-masking logins. DB credential issuance moved to the jwt-keycloak mount — see OBO Flow section.",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -336,8 +336,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_create_auth_jwt_keycloak__count[2m])",
+          "legendFormat": "OBO (DB-cred) logins/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
-          "legendFormat": "SPIFFE logins/s (new)"
+          "legendFormat": "SPIFFE (ai-agent + transform) logins/s"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -345,13 +350,13 @@
           "legendFormat": "SPIFFE renewals/s"
         }
       ],
-      "title": "Agent SPIFFE Auth Activity",
+      "title": "Vault JWT Auth Activity",
       "type": "timeseries"
     },
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Cumulative SPIFFE logins since stack start — vault-agent/ai-agent plus user-mcp Transform. DB-cred logins are on jwt-keycloak, not this series.",
+      "description": "Cumulative OBO (jwt-keycloak) logins since stack start — one per user-mcp DB-backed tool call. A rising count confirms tool calls are flowing through Vault.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -364,17 +369,17 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "vault_route_create_auth_jwt_spiffe__count",
-          "legendFormat": "SPIFFE logins total"
+          "expr": "vault_route_create_auth_jwt_keycloak__count",
+          "legendFormat": "OBO logins total"
         }
       ],
-      "title": "Total SPIFFE Logins",
+      "title": "Total OBO DB-Cred Logins",
       "type": "stat"
     },
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Total SPIFFE token renewals. vault-agent renews its token every ~30 min; a rising count = agent is continuously online.",
+      "description": "Total SPIFFE token renewals from vault-agent. A rising count = ai-agent is continuously online and renewing its token every ~30 min.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -561,7 +566,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "OBO + Vault flow activity: DB credential issuances, jwt-keycloak logins (human OBO bound_claims), SPIFFE (agent + Transform), and PII transform calls.",
+      "description": "OBO flow activity: DB credential issuances (jwt-keycloak OBO logins), DB cred reads, PII transform calls, SPIFFE logins (ai-agent + TransformMasker only), and actor token mints.",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -575,8 +580,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_create_auth_jwt_keycloak__count[2m])",
+          "legendFormat": "OBO DB-cred logins/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_read_database__count[2m])",
-          "legendFormat": "DB cred requests/s (users.read scope)"
+          "legendFormat": "DB cred reads/s"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -586,7 +596,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
-          "legendFormat": "SPIFFE logins/s (agent + transform)"
+          "legendFormat": "SPIFFE logins/s (ai-agent + transform)"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -596,7 +606,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_read_identity__count[2m])",
-          "legendFormat": "Actor token mints/s (OBO exchange trigger)"
+          "legendFormat": "Actor token mints/s"
         }
       ],
       "title": "OBO Flow Activity by Operation Type",
@@ -626,7 +636,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Vault request latency on the routes most relevant to the OBO and credential flow: database reads (credential fetch), identity reads (actor token), jwt-keycloak logins (human OBO), and jwt-spiffe (agent/transform).",
+      "description": "Vault request latency (p95) on the routes most relevant to the OBO and credential flow: jwt-keycloak OBO login (DB cred issuance), database reads (credential fetch), identity reads (actor token), and jwt-spiffe logins (ai-agent + TransformMasker).",
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -637,6 +647,11 @@
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
       "id": 239,
       "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(vault_route_create_auth_jwt_keycloak__bucket[5m]))",
+          "legendFormat": "p95 OBO login"
+        },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.95, rate(vault_route_read_database__bucket[5m]))",

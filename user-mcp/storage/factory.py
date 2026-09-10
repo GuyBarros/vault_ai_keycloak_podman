@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from ciba_client import CibaClient
 from config import Settings
-from spiffe_client import SpiffeSvidProvider
 from storage.base import UserRepository
 from storage.file_repo import FileUserRepository
 from storage.postgres_repo import PostgresUserRepository
@@ -14,7 +13,6 @@ def build_repository(settings: Settings) -> UserRepository:
         return FileUserRepository(file_path=settings.users_file)
 
     vault_client: VaultClient | None = None
-    spiffe_provider: SpiffeSvidProvider | None = None
     if settings.db_auth_mode == "vault":
         vault_tls_verify: bool | str = (
             settings.vault_ca_bundle.strip() or settings.vault_verify_tls
@@ -25,10 +23,6 @@ def build_repository(settings: Settings) -> UserRepository:
             namespace=settings.vault_namespace or None,
             verify_tls=vault_tls_verify,
             timeout_seconds=settings.vault_request_timeout_seconds,
-        )
-        spiffe_provider = SpiffeSvidProvider(
-            socket_path=settings.spiffe_socket,
-            audience=settings.spiffe_jwt_audience,
         )
 
     ciba_client: CibaClient | None = None

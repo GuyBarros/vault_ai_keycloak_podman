@@ -106,8 +106,15 @@ def extract_identity(claims: dict[str, Any]) -> dict[str, Any]:
     scope_claim = _normalize_scope(claims.get("scope"))
     if not scope_claim:
         scope_claim = _normalize_scope(claims.get("scp"))
-    actor_claim = claims.get("actor")
-    agent_id = actor_claim.get("agent_id") if isinstance(actor_claim, dict) else None
+    # may_act is the Keycloak delegation claim carrying the acting service's
+    # identity (set by the delegation scope's protocol mappers in demo-realm.json).
+    # Fall back to actor.agent_id for tokens not produced via token-exchange.
+    may_act = claims.get("may_act")
+    if isinstance(may_act, dict):
+        agent_id = may_act.get("preferred_username")
+    else:
+        actor_claim = claims.get("actor")
+        agent_id = actor_claim.get("agent_id") if isinstance(actor_claim, dict) else None
     raw_groups = claims.get("groups")
     groups: tuple[str, ...] = ()
     if isinstance(raw_groups, list):

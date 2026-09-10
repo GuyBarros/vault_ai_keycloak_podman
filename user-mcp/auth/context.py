@@ -62,6 +62,8 @@ def reset_request_identity(
     current_obo_groups.reset(groups_token)
     current_obo_user.reset(user_token)
     current_obo_scope.reset(scope_token)
+    current_obo_token.reset(token_token)
+    current_agent_id.reset(agent_token)
 
 
 def caller_is_admin() -> bool:

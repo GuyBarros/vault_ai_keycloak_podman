@@ -146,6 +146,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
 
 
 async def _run_tool(tool_name, action, result_summary, masker=None):
+    token = current_tool_name.set(tool_name)
     try:
         require_scopes(tool_name)
         result = await action()
@@ -176,13 +177,15 @@ async def _run_tool(tool_name, action, result_summary, masker=None):
     finally:
         current_vault_action_token.set(None)
 
+    finally:
+        current_tool_name.reset(token)
     summary = result_summary(result) if result_summary else {}
     log_event(
         LOGGER,
         "tool_invoked",
         message=f"{tool_name} invoked",
         tool=tool_name,
-        required_scopes=sorted(get_required_scopes(tool_name)),
+        required_scopes=" ".join(sorted(get_required_scopes(tool_name))),
         **summary,
     )
     return result

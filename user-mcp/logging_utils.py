@@ -307,7 +307,7 @@ class MCPNoiseDowngradeFilter(logging.Filter):
 
 def _apply_identity_message_prefix(payload: dict[str, Any]) -> None:
     preferred_username = payload.get("preferred_username")
-    agent_id = payload.pop("agent_id", None)
+    agent_id = payload.get("agent_id")
     message = payload.get("message")
     if not isinstance(message, str):
         return

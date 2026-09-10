@@ -17,7 +17,6 @@ from ciba_client import CibaClient
 from errors import AppError
 from logging_utils import bind_log_context, log_event
 from models import UserRecord
-from spiffe_client import SpiffeSvidProvider
 from storage.base import UserRepository
 from vault_client import VaultClient
 
@@ -85,7 +84,6 @@ class PostgresUserRepository(UserRepository):
         db_password: str = "",
         # vault mode
         vault_client: VaultClient | None = None,
-        spiffe_provider: SpiffeSvidProvider | None = None,
         vault_jwt_read_role: str = "",
         vault_jwt_write_role: str = "",
         vault_db_read_path: str = "",
@@ -234,6 +232,14 @@ class PostgresUserRepository(UserRepository):
                 "Vault on behalf of a request with no attached user.",
             )
 
+        obo_token = current_obo_token.get(None)
+        if not obo_token:
+            raise AppError(
+                401,
+                "invalid_request",
+                "OBO token is missing from request context; cannot authenticate to Vault.",
+            )
+
         scope = current_obo_scope.get(None) or ""
         jwt_role, action_role, db_creds_path = self._select_vault_targets(
             scope, write=write
@@ -297,7 +303,7 @@ class PostgresUserRepository(UserRepository):
             LOGGER,
             "db_call",
             level=logging.DEBUG,
-            message="Postgres connection ready (vault mode)",
+            message="Postgres connection ready (vault mode, keycloak obo auth)",
             auth_mode="vault",
             db_username=creds.username,
             vault_role=action_role,
