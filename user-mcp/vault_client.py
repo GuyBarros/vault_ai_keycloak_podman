@@ -22,12 +22,10 @@ class DynamicDbCredentials:
 class VaultClient:
     """Thin async Vault client for the JWT login + database creds flow.
 
-    Authenticates to Vault with a SPIFFE JWT-SVID (this workload's own
-    identity, fetched from the local SPIRE Workload API — see
-    spiffe_client.py) to obtain a short-lived Vault client token, then reads
-    dynamic Postgres credentials from the database secrets engine using that
-    token. Which Vault role to request (read vs. write) is still selected by
-    the caller from the human user's validated OIDC scope.
+    Authenticates to Vault with a JWT — SPIFFE JWT-SVID for workload
+    attestation, Keycloak OBO for human identity. Neither login token
+    can call secrets. Vault then mints a third action token (token role)
+    that is the only identity allowed to read database/creds or Transform.
     """
 
     def __init__(
@@ -62,19 +60,12 @@ class VaultClient:
         self,
         jwt_token: str,
         role: str,
-        user_metadata: dict[str, str] | None = None,
+        jwt_path: str | None = None,
+        jwt_grant: str | None = None,
     ) -> str:
-        """Login to Vault using a JWT token and return the client token.
-
-        user_metadata is forwarded in the login payload so Vault stores it on
-        the resulting entity alias — it appears in audit logs and token metadata
-        as auth.metadata.* fields, giving full attribution of which agent and
-        tool triggered each credential issuance.
-        """
-        url = f"{self._addr}/v1/auth/{self._jwt_path}/login"
-        payload: dict = {"role": role, "jwt": jwt_token}
-        if user_metadata:
-            payload["user_metadata"] = user_metadata
+        path = (jwt_path or self._jwt_path).strip("/")
+        url = f"{self._addr}/v1/auth/{path}/login"
+        payload = {"role": role, "jwt": jwt_token}
         try:
             async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
                 resp = await client.post(url, json=payload, headers=self._headers())
@@ -85,7 +76,20 @@ class VaultClient:
                 f"Vault login failed (transport): {exc}",
             ) from exc
 
+        extra = {"jwt_grant": jwt_grant} if jwt_grant else {}
         if resp.status_code >= 400:
+            log_event(
+                LOGGER,
+                "vault_login_rejected",
+                level=logging.INFO,
+                message=(
+                    "Vault JWT login rejected "
+                    f"(status={resp.status_code}): {_safe_error_body(resp)}"
+                ),
+                vault_role=role,
+                jwt_path=path,
+                **extra,
+            )
             raise AppError(
                 _vault_status_to_app_status(resp.status_code),
                 _vault_status_to_app_error(resp.status_code),
@@ -107,8 +111,193 @@ class VaultClient:
             level=logging.INFO,
             message="Vault JWT login succeeded",
             vault_role=role,
-            jwt_path=self._jwt_path,
+            jwt_path=path,
+            **extra,
         )
+        return client_token
+
+    async def ciba_required_by_policy(
+        self,
+        client_token: str,
+        *,
+        action: str,
+        user: str,
+    ) -> bool:
+        """True when ACL policy for this action requires CIBA for this human.
+
+        Probe path is ciba/<action>/<username>. Edit policy ciba-list-users
+        in the Vault UI: read = phone Approve, deny = silent OBO.
+        """
+        path = f"ciba/{action}/{user}"
+        url = f"{self._addr}/v1/sys/capabilities-self"
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(
+                    url,
+                    json={"paths": [path]},
+                    headers=self._headers(client_token),
+                )
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault capabilities-self failed (transport): {exc}",
+            ) from exc
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                "Vault capabilities-self rejected "
+                f"(status={resp.status_code}): {_safe_error_body(resp)}",
+            )
+        data = _json_body(resp).get("data") or {}
+        caps = data.get(path) or data.get("capabilities") or []
+        if not isinstance(caps, list):
+            caps = [caps]
+        caps_l = {str(c).lower() for c in caps}
+        return "read" in caps_l and "deny" not in caps_l
+
+    async def create_action_token(
+        self,
+        parent_token: str,
+        role: str,
+        display_name: str,
+        meta: dict[str, str],
+        ttl: str = "60s",
+        approver_token: str | None = None,
+    ) -> str:
+        """Mint the combined user+workload identity via a Vault token role.
+
+        The human JWT login may only request auth/token/create/<role>. Vault
+        Control Groups require a SPIFFE-authenticated member of
+        user-mcp-workload to authorize that request. Unwrap then yields the
+        only token permitted to call database/creds and Transform.
+        """
+        url = f"{self._addr}/v1/auth/token/create/{role}"
+        payload = {
+            "display_name": display_name[:32],
+            "meta": meta,
+            "ttl": ttl,
+            "renewable": False,
+        }
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(
+                    url, json=payload, headers=self._headers(parent_token)
+                )
+                body = _json_body(resp)
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault action-token create failed (transport): {exc}",
+            ) from exc
+
+        wrap = body.get("wrap_info") or {}
+        data = body.get("data") or {}
+        wrap_token = wrap.get("token") or data.get("token")
+        wrap_accessor = wrap.get("accessor") or data.get("accessor")
+        wrapped_accessor = wrap.get("wrapped_accessor") or data.get("wrapped_accessor")
+        if wrap_token and wrap_accessor:
+            if not approver_token:
+                raise AppError(
+                    403,
+                    "invalid_request",
+                    "Vault action-token mint requires SPIFFE control-group "
+                    "approval; the human JWT alone cannot unwrap the combined "
+                    "identity.",
+                )
+            try:
+                await self._authorize_control_group(approver_token, wrap_accessor)
+            except AppError:
+                if wrapped_accessor and wrapped_accessor != wrap_accessor:
+                    await self._authorize_control_group(
+                        approver_token, wrapped_accessor
+                    )
+                else:
+                    raise
+            client_token = await self._unwrap_token(wrap_token)
+            log_event(
+                LOGGER,
+                "vault_action_token_ok",
+                level=logging.INFO,
+                message="Vault minted combined user+workload action identity",
+                vault_role=role,
+                display_name=display_name[:32],
+                control_group="authorized",
+            )
+            return client_token
+
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault action-token create rejected (status={resp.status_code}): "
+                f"{_safe_error_body(resp)}",
+            )
+
+        raise AppError(
+            502,
+            "agent_error",
+            "Vault action-token create did not activate a control group; "
+            "refusing to use a token minted without SPIFFE approval.",
+        )
+
+    async def _authorize_control_group(self, approver_token: str, accessor: str) -> None:
+        url = f"{self._addr}/v1/sys/control-group/authorize"
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(
+                    url,
+                    json={"accessor": accessor},
+                    headers=self._headers(approver_token),
+                )
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault control-group authorize failed (transport): {exc}",
+            ) from exc
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault control-group authorize rejected (status={resp.status_code}): "
+                f"{_safe_error_body(resp)}",
+            )
+        log_event(
+            LOGGER,
+            "vault_control_group_ok",
+            level=logging.INFO,
+            message="SPIFFE identity authorized the action-token control group",
+        )
+
+    async def _unwrap_token(self, wrapping_token: str) -> str:
+        url = f"{self._addr}/v1/sys/wrapping/unwrap"
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.post(url, headers=self._headers(wrapping_token))
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault unwrap failed (transport): {exc}",
+            ) from exc
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault unwrap rejected (status={resp.status_code}): "
+                f"{_safe_error_body(resp)}",
+            )
+        body = _json_body(resp)
+        client_token = (body.get("auth") or {}).get("client_token")
+        if not client_token:
+            raise AppError(
+                502,
+                "agent_error",
+                "Vault unwrap response did not include auth.client_token.",
+            )
         return client_token
 
     async def transform_encode(
@@ -206,6 +395,14 @@ def _vault_status_to_app_error(status: int) -> str:
     if status in (400, 401, 403):
         return "invalid_request"
     return "agent_error"
+
+
+def _json_body(resp: httpx.Response) -> dict:
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
 
 
 def _safe_error_body(resp: httpx.Response) -> str:

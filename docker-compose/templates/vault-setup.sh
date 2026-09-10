@@ -167,6 +167,8 @@ vault write auth/jwt-keycloak/role/user-mcp-obo-write - <<'EOF'
 }
 EOF
 
+echo "vault-setup: jwt-keycloak mint-only roles + action token roles written."
+
 # Vault OIDC identity: issuer + role for the ai-agent ──
 vault write identity/oidc/config \
   issuer="http://vault:8200"
@@ -209,8 +211,8 @@ path "opa-policies/data/bundle" {
 EOF
 
 # SPIFFE JWT auth for the ai-agent (vault-agent authenticates via SPIRE SVID).
-# The jwt-spiffe mount is already configured above for user-mcp; we reuse it
-# and add a dedicated role bound to the ai-agent SPIFFE ID.
+# The jwt-spiffe mount is already configured above; we add a dedicated role
+# bound to the ai-agent SPIFFE ID.
 
 vault policy write ai-agent-spiffe-policy - <<'EOF'
 path "identity/oidc/token/agent-role" {
@@ -251,6 +253,27 @@ echo "vault-setup: ai-agent entity id = ${ENTITY_ID}"
 # SPIFFE login maps to the ai-agent identity entity.
 JWT_SPIFFE_ACCESSOR=$(vault auth list -detailed -format=table \
   | awk '/^jwt-spiffe\// {print $3}')
+echo "vault-setup: jwt-spiffe accessor = ${JWT_SPIFFE_ACCESSOR}"
+if [ -z "${JWT_SPIFFE_ACCESSOR}" ]; then
+  echo "vault-setup: ERROR — could not resolve jwt-spiffe accessor" >&2
+  exit 1
+fi
+
+vault write identity/entity name=user-mcp-workload
+USER_MCP_ENTITY_ID=$(vault read -field=id identity/entity/name/user-mcp-workload)
+echo "vault-setup: user-mcp workload entity id = ${USER_MCP_ENTITY_ID}"
+
+vault write identity/entity-alias \
+  name="spiffe://example.org/user-mcp" \
+  canonical_id="${USER_MCP_ENTITY_ID}" \
+  mount_accessor="${JWT_SPIFFE_ACCESSOR}" \
+  || echo "vault-setup: user-mcp entity-alias already present (ok on re-run)."
+
+vault write identity/group \
+  name=user-mcp-workload \
+  type=internal \
+  member_entity_ids="${USER_MCP_ENTITY_ID}"
+echo "vault-setup: identity group user-mcp-workload written."
 
 vault write identity/entity-alias \
   name="spiffe://example.org/ai-agent" \
@@ -302,9 +325,6 @@ vault secrets list | grep -q "^litellm/" || \
   vault secrets enable -path=litellm -version=2 kv
 
 vault kv put litellm/config \
-  openai_api_key="${OPENAI_API_KEY:-}" \
-  watsonx_api_key="${WATSONX_API_KEY:-}" \
-  watsonx_project_id="${WATSONX_PROJECT_ID:-}" \
   master_key="${LITELLM_MASTER_KEY:-ibm123}"
 
 vault policy write litellm-secrets - <<'EOF'
@@ -338,10 +358,19 @@ vault write transform/transformation/mask-credit-card \
 vault write transform/role/user-mcp-transform \
   transformations=mask-ssn,mask-credit-card
 
-# Policy to allow user-mcp to encode through Transform
-vault policy write user-mcp-transform - <<'EOF'
-path "transform/encode/user-mcp-transform" {
-  capabilities = ["create", "update"]
+# Leftover SPIFFE transform role: attestation only. Transform encode is
+# granted solely on the combined action token (user + user-mcp).
+vault write auth/jwt-spiffe/role/user-mcp-spiffe-transform - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["TESTING"],
+  "bound_subject": "spiffe://example.org/user-mcp",
+  "token_policies": ["default"],
+  "token_bound_cidrs": ["172.28.0.20/32"],
+  "token_ttl": 300,
+  "token_max_ttl": 900,
+  "token_type": "service"
 }
 EOF
 

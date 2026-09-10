@@ -36,12 +36,11 @@ template {
 }
 
 # Render LiteLLM secrets as a shell env file consumed by the litellm container.
+# The model itself (qwen2.5:7b via local Ollama) needs no API key — this only
+# carries the proxy's own master key.
 template {
   contents = <<EOF
 {{- with secret "litellm/data/config" -}}
-OPENAI_API_KEY={{ .Data.data.openai_api_key }}
-WATSONX_API_KEY={{ .Data.data.watsonx_api_key }}
-WATSONX_PROJECT_ID={{ .Data.data.watsonx_project_id }}
 LITELLM_MASTER_KEY={{ .Data.data.master_key }}
 {{- end }}
 EOF

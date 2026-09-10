@@ -136,9 +136,6 @@ services:
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: root
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      WATSONX_API_KEY: ${WATSONX_API_KEY:-}
-      WATSONX_PROJECT_ID: ${WATSONX_PROJECT_ID:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-ibm123}
     entrypoint: /bin/sh
     command: /vault-setup/vault-setup.sh
@@ -171,13 +168,40 @@ services:
       KC_METRICS_ENABLED: "true"
     volumes:
       - ./templates/demo-realm.json:/opt/keycloak/data/import/demo-realm.json:ro
-    command: start-dev --import-realm --features=token-exchange-delegation,parameterized-scopes
+    command: >-
+      start-dev --import-realm
+      --features=token-exchange-delegation,parameterized-scopes,ciba
+      --spi-ciba-auth-channel-ciba-http-auth-channel-http-authentication-channel-uri=http://ciba-channel:8093/ciba/authn
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q 'issuer' <&3"]
       interval: 10s
       timeout: 5s
       retries: 15
       start_period: 30s
+    networks:
+      - app-network
+    depends_on:
+      ciba-channel:
+        condition: service_started
+
+
+  # ---------------------------------------------------------------------------
+  # CIBA authentication channel — Keycloak POSTs pending approvals here.
+  # Humans approve at http://localhost:8093. ACL policy ciba-list-users
+  # (ciba/list-users/<username>) is the per-actor switch for that action.
+  # ---------------------------------------------------------------------------
+  ciba-channel:
+    <<: *cpu
+    image: python:3.12-slim
+    container_name: ciba-channel
+    command: ["python", "/app/server.py"]
+    ports:
+      - "8093:8093"
+    environment:
+      CIBA_CHANNEL_PORT: "8093"
+      CIBA_CALLBACK_URL: http://keycloak:8080/realms/demo/protocol/openid-connect/ext/ciba/auth/callback
+    volumes:
+      - ./templates/ciba-channel/server.py:/app/server.py:ro
     networks:
       - app-network
 
@@ -321,6 +345,7 @@ services:
         condition: service_started
     networks:
       app-network:
+        ipv4_address: 172.28.0.20
         aliases:
           - user-mcp
 
@@ -540,6 +565,26 @@ services:
       - app-network
 
   # ---------------------------------------------------------------------------
+  # Audit trail — live Loki view of Vault identities + CIBA step-up.
+  # Open http://localhost:8092
+  # ---------------------------------------------------------------------------
+  audit-trail:
+    <<: *cpu
+    image: nginx:1.27-alpine
+    container_name: audit-trail
+    restart: unless-stopped
+    ports:
+      - "8092:80"
+    volumes:
+      - ./templates/audit-trail/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./templates/audit-trail/index.html:/usr/share/nginx/html/index.html:ro
+    depends_on:
+      loki:
+        condition: service_started
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
   # Loki — log aggregation backend.
   # ---------------------------------------------------------------------------
   loki:
@@ -602,6 +647,21 @@ services:
 networks:
   app-network:
     driver: bridge
+    ipam:
+      config:
+        # user-mcp is pinned at .20 so Vault token_bound_cidrs can require
+        # jwt-keycloak / user-mcp SPIFFE tokens to be used only from that
+        # workload — a stolen OBO JWT presented on localhost:8200 cannot
+        # mint database/creds.
+        #
+        # ip_range confines auto-assigned (non-pinned) containers to
+        # 172.28.1.0/24, keeping 172.28.0.0/24 free for static addresses.
+        # Without this, IPAM hands out low addresses like .20 to whichever
+        # dynamic container is created first — depends_on ordering makes
+        # that non-deterministic — and user-mcp's later, pinned request
+        # for .20 then fails with "already allocated".
+        - subnet: 172.28.0.0/16
+          ip_range: 172.28.1.0/24
 
 volumes:
   spire-data:

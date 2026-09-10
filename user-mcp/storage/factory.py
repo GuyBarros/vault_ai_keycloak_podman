@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ciba_client import CibaClient
 from config import Settings
 from storage.base import UserRepository
 from storage.file_repo import FileUserRepository
@@ -18,10 +19,22 @@ def build_repository(settings: Settings) -> UserRepository:
         )
         vault_client = VaultClient(
             addr=settings.vault_addr,
-            jwt_path=settings.vault_keycloak_jwt_path,
+            jwt_path=settings.vault_jwt_path,
             namespace=settings.vault_namespace or None,
             verify_tls=vault_tls_verify,
             timeout_seconds=settings.vault_request_timeout_seconds,
+        )
+
+    ciba_client: CibaClient | None = None
+    if settings.db_auth_mode == "vault" and settings.ciba_client_id:
+        ciba_client = CibaClient(
+            keycloak_url=settings.ciba_keycloak_url,
+            realm=settings.ciba_realm,
+            client_id=settings.ciba_client_id,
+            client_secret=settings.ciba_client_secret,
+            scope=settings.ciba_scope,
+            poll_timeout_seconds=settings.ciba_poll_timeout_seconds,
+            approve_url=settings.ciba_approve_url,
         )
 
     return PostgresUserRepository(
@@ -31,8 +44,14 @@ def build_repository(settings: Settings) -> UserRepository:
         db_user=settings.db_user,
         db_password=settings.db_password,
         vault_client=vault_client,
-        vault_jwt_read_role=settings.vault_keycloak_read_role,
-        vault_jwt_write_role=settings.vault_keycloak_write_role,
+        spiffe_provider=spiffe_provider,
+        vault_jwt_read_role=settings.vault_jwt_read_role,
+        vault_jwt_write_role=settings.vault_jwt_write_role,
         vault_db_read_path=settings.vault_db_read_path,
         vault_db_write_path=settings.vault_db_write_path,
+        vault_spiffe_jwt_path=settings.vault_spiffe_jwt_path,
+        vault_spiffe_workload_role=settings.vault_spiffe_workload_role,
+        vault_action_read_role=settings.vault_action_read_role,
+        vault_action_write_role=settings.vault_action_write_role,
+        ciba_client=ciba_client,
     )

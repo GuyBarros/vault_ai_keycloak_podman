@@ -5,9 +5,6 @@
 # auto-detects from `uname -m`. See README.md.
 
 REQUIRED_VARS := \
-	WATSONX_PROJECT_ID \
-	WATSONX_API_KEY \
-	WATSONX_API_URL \
 	GENERIC_CLIENT_ID \
 	GENERIC_CLIENT_SECRET \
 	KEYCLOAK_CLIENT_SECRET
@@ -61,7 +58,11 @@ help:
 	@echo "  make             Full reset, build, and start for the selected arch"
 	@echo "  make build       Build local images for DOCKER_PLATFORM"
 	@echo "  make clear       Stop stack and delete volumes"
-	@echo "  make help        Show this message"
+	@echo "  make prove-obo-vault  Prove jwt-keycloak bound_claims (stack must be up)"
+	@echo "  make prove-ciba-vault Prove CIBA step-up on oidc-read (stack must be up)"
+	@echo "  make prove-loa        Prove the loa=1/loa=2 (password/MFA) claims (stack must be up)"
+	@echo "  make demo-status      One-shot checklist (web, vault, CIBA, phone)"
+	@echo "  make demo-status-watch  Same, refresh every 2s"
 
 # check-env validates that every required variable is set and non-empty.
 check-env:
@@ -93,4 +94,20 @@ clear:
 build:
 	docker compose build
 
-.PHONY: all help check-env clear build
+prove-ciba-vault:
+	chmod +x ./prove-ciba-vault.sh
+	./prove-ciba-vault.sh
+
+prove-loa:
+	chmod +x ./prove-loa.sh
+	./prove-loa.sh
+
+demo-status:
+	chmod +x ./demo-status.sh
+	./demo-status.sh
+
+demo-status-watch:
+	chmod +x ./demo-status.sh
+	./demo-status.sh --watch
+
+.PHONY: all help check-env clear build prove-obo-vault prove-ciba-vault prove-loa demo-status demo-status-watch

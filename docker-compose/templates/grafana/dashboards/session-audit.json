@@ -416,7 +416,7 @@
       },
       "targets": [{
         "datasource": { "type": "loki", "uid": "loki" },
-        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | event=~\"agent_request_started|identity_broker_call|obo_token_exchange_completed|scoped_tool_invoke|scoped_tool_token_exchange_failed|tool_invoked|vault_db_creds_issued|vault_login_ok\" | preferred_username=~\"$user\"",
+        "expr": "{container=~\"ai-agent|user-mcp|token-exchange\"} | json | event=~\"agent_request_started|identity_broker_call|obo_token_exchange_completed|scoped_tool_invoke|scoped_tool_token_exchange_failed|tool_invoked|vault_db_creds_issued|vault_login_ok|vault_login_rejected|vault_ciba_required|ciba_started|ciba_approved|ciba_denied\" | preferred_username=~\"$user\"",
         "legendFormat": ""
       }],
       "title": "Correlated Request Trace (all services)",

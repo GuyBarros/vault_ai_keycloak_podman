@@ -125,6 +125,8 @@ async def fetch_mcp_tools(
                 "url": user_mcp_url,
                 "transport": "streamable_http",
                 "headers": headers,
+                "timeout": 180,
+                "sse_read_timeout": 180,
             }
         }
     )
@@ -182,6 +184,8 @@ async def invoke_mcp_tool(
                 "url": user_mcp_url,
                 "transport": "streamable_http",
                 "headers": headers,
+                "timeout": 180,
+                "sse_read_timeout": 180,
             }
         }
     )

@@ -126,9 +126,27 @@ class AgentRuntime:
                 request_id=request_id,
                 stage="invoke",
             )
-            assistant_response = self.llm_with_tools.invoke(
-                _stringify_message_contents(messages)
-            )
+            try:
+                assistant_response = self.llm_with_tools.invoke(
+                    _stringify_message_contents(messages)
+                )
+            except Exception as exc:
+                detail = _llm_failure_detail(exc)
+                log_event(
+                    self.logger,
+                    "agent_execution_failed",
+                    level=logging.ERROR,
+                    message="LLM invoke failed before any MCP tool ran",
+                    request_id=request_id,
+                    user_message=user_message_text,
+                    error_type=type(exc).__name__,
+                    error_message=detail,
+                )
+                raise AppError(
+                    status_code=502,
+                    error="llm_unavailable",
+                    message=detail,
+                ) from exc
             tool_calls = list(getattr(assistant_response, "tool_calls", []) or [])
             if not tool_calls:
                 break
@@ -170,6 +188,18 @@ class AgentRuntime:
             iter((response_text,)),
             media_type="text/plain",
         )
+
+
+def _llm_failure_detail(exc: BaseException) -> str:
+    text = str(exc)
+    if "BXNIM0415E" in text or "API key could not be found" in text:
+        return (
+            "Watsonx rejected the API key (IBM IAM BXNIM0415E). "
+            "The agent never reached Vault or user-mcp."
+        )
+    if "litellm.BadRequestError" in text or "WatsonxException" in text:
+        return "Language model request failed. The agent never reached Vault or user-mcp."
+    return "Language model unavailable. The agent never reached Vault or user-mcp."
 
 
 def _extract_last_user_message(messages: list[Any]) -> str:

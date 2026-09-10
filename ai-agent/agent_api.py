@@ -44,7 +44,7 @@ def _get_client_ip(request: Request) -> str | None:
 
 
 def _build_base_llm(settings: Settings):
-    return init_chat_model(settings.model, streaming=True, timeout=120)
+    return init_chat_model(settings.model, streaming=True, timeout=180)
 
 
 def _build_runtime_for_request(

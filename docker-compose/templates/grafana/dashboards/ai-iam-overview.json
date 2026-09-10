@@ -26,7 +26,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Number of Keycloak OBO logins against the jwt-keycloak mount in the last 5 minutes. Each login = one user-mcp tool call that needed DB credentials, authenticated with the caller's OBO token.",
+      "description": "Number of jwt-keycloak logins (human OBO; mint-only). Secret calls use the combined action token Vault issues after that login.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -143,7 +143,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_create_auth_jwt_keycloak__count[2m])",
-          "legendFormat": "OBO (DB-cred) logins/s"
+          "legendFormat": "OIDC user logins/s"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -590,6 +590,11 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(vault_route_create_auth_jwt_keycloak__count[2m])",
+          "legendFormat": "OIDC (OBO) logins/s"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(vault_route_create_auth_jwt_spiffe__count[2m])",
           "legendFormat": "SPIFFE logins/s (ai-agent + transform)"
         },
@@ -656,6 +661,11 @@
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.95, rate(vault_route_read_identity__bucket[5m]))",
           "legendFormat": "p95 identity/OIDC read"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(vault_route_create_auth_jwt_keycloak__bucket[5m]))",
+          "legendFormat": "p95 OIDC (OBO) login"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
