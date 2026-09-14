@@ -160,6 +160,9 @@ def perform_token_exchange(
     logger: logging.Logger,
     request_id: str,
     scope: str,
+    authorization_details: str | None = None,
+    child: bool = False,
+    act: str | None = None,
 ) -> tuple[str, float]:
     log_event(
         logger,
@@ -174,6 +177,13 @@ def perform_token_exchange(
             "subject_token": subject_token,
             "actor_token": actor_token,
             "scope": scope,
+            **(
+                {"authorization_details": authorization_details}
+                if authorization_details
+                else {}
+            ),
+            **({"act": act} if act else {}),
+            **({"child": True} if child else {}),
         }
     ).encode("utf-8")
     request = urllib.request.Request(
@@ -236,6 +246,7 @@ class OboTokenService:
         # of scope — a subject that just exchanged users.write should see that
         # token, not whichever scope was cached first.
         self.last_cache_key_by_subject: dict[str, str] = {}
+        self.last_child_obo_token: str | None = None
         self.lock = Lock()
 
     def clear_cache(self) -> None:
@@ -275,6 +286,9 @@ class OboTokenService:
         actor_token: str,
         request_id: str,
         scope: str,
+        authorization_details: str | None = None,
+        child: bool = False,
+        act: str | None = None,
     ) -> tuple[str, float]:
         return perform_token_exchange(
             subject_token=subject_token,
@@ -283,6 +297,9 @@ class OboTokenService:
             logger=self.logger,
             request_id=request_id,
             scope=scope,
+            authorization_details=authorization_details,
+            child=child,
+            act=act,
         )
 
     def get_cached_token(
@@ -335,12 +352,14 @@ class OboTokenService:
         subject_token: str,
         request_id: str,
         scopes: list[str],
+        authorization_details: str | None = None,
+        child: bool = False,
+        act: str | None = None,
     ) -> str:
         """Return an OBO token for *subject_token* carrying exactly *scopes*.
 
-        Cache key is (subject_token, role_name, normalized_scope) so different
-        scope sets never share an entry — the token returned to a caller asking
-        for `users.read` will never accidentally grant `users.write`.
+        Cache key is (subject_token, role_name, normalized_scope, rar) so
+        different RAR sets never share an entry.
         """
         if not scopes:
             raise AppError(
@@ -349,9 +368,14 @@ class OboTokenService:
                 message="resolve_token requires a non-empty scopes list.",
             )
 
+        from rar import authorization_details_json
+
         normalized_scope = normalize_scopes(scopes)
+        rar = authorization_details or authorization_details_json(scopes)
         cache_key = build_cache_key(
-            subject_token, self.settings.obo_role_name, normalized_scope
+            subject_token,
+            self.settings.obo_role_name,
+            f"{normalized_scope}:{rar}:{'child' if child else 'parent'}:{act or ''}",
         )
 
         with self.lock:
@@ -380,12 +404,20 @@ class OboTokenService:
                 cache_key=cache_key,
                 scope=normalized_scope,
             )
-            actor_token = read_actor_token(self.settings.actor_token_path, self.logger)
+            actor_token = read_actor_token(
+                self.settings.child_actor_token_path
+                if child and self.settings.child_actor_token_path.exists()
+                else self.settings.actor_token_path,
+                self.logger,
+            )
             obo_token, expiry_time = self.perform_token_exchange(
                 subject_token=subject_token,
                 actor_token=actor_token,
                 request_id=request_id,
                 scope=normalized_scope,
+                authorization_details=rar,
+                child=child,
+                act=act,
             )
             self.cache[cache_key] = CachedToken(
                 token=obo_token,

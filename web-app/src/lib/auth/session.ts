@@ -11,6 +11,8 @@ import {
 } from '@/lib/auth/cookies';
 import type { UserInfo } from '@/lib/auth/oauth';
 import { decodeUnverified } from '@/lib/auth/jwt';
+import { introspectAccessToken } from '@/lib/auth/oauth';
+import { isSidRevoked, isSubjectRevoked, revokeSid, revokeSubject } from '@/lib/auth/revoked-sessions';
 
 interface SessionMetaCookie {
   expires_at?: number;
@@ -51,11 +53,40 @@ async function readIdTokenHintCookie(): Promise<IronSession<IdTokenHintCookie>> 
   return getIronSession<IdTokenHintCookie>(await cookies(), idTokenHintCookieOptions);
 }
 
+const introCache = new Map<string, { active: boolean; until: number }>();
+
 export async function getSession(): Promise<SessionData | null> {
   const meta = await readMetaCookie();
   const tokens = await readTokensCookie();
   if (!tokens.access_token) return null;
   if (meta.expires_at && Date.now() / 1000 >= meta.expires_at) return null;
+
+  const claims = decodeUnverified(tokens.access_token);
+  const sid = typeof claims.sid === 'string' ? claims.sid : undefined;
+  const sub =
+    (typeof claims.preferred_username === 'string' && claims.preferred_username) ||
+    (typeof claims.sub === 'string' && claims.sub) ||
+    undefined;
+  if (isSidRevoked(sid) || isSubjectRevoked(sub)) {
+    await clearSession();
+    return null;
+  }
+
+  const now = Date.now();
+  const cached = introCache.get(tokens.access_token);
+  let active = cached && cached.until > now ? cached.active : undefined;
+  if (active === undefined) {
+    active = await introspectAccessToken(tokens.access_token);
+    introCache.set(tokens.access_token, { active, until: now + 5_000 });
+  }
+  if (!active) {
+    revokeSid(sid);
+    revokeSubject(sub);
+    introCache.delete(tokens.access_token);
+    await clearSession();
+    return null;
+  }
+
   return {
     access_token: tokens.access_token,
     expires_at: meta.expires_at,

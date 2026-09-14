@@ -173,8 +173,8 @@ async def mask_user_records(
 
 
 class TransformMasker:
-    """Masks UserRecord tool results via Vault Transform using the combined
-    Vault action token (human + user-mcp). SPIFFE-only tokens cannot encode.
+    """Masks UserRecord tool results via Vault Transform using the same
+    Keycloak OBO/CIBA JWT presented to Vault OAuth Resource Server.
     """
 
     def __init__(
@@ -192,8 +192,8 @@ class TransformMasker:
             raise AppError(
                 403,
                 "invalid_request",
-                "Vault Transform requires the combined user+user-mcp action "
-                "token; the SPIFFE and OBO login tokens cannot encode.",
+                "Vault Transform requires the OBO/CIBA JWT presented to "
+                "Vault OAuth Resource Server.",
             )
         if isinstance(result, list) and result and isinstance(result[0], UserRecord):
             masked = await mask_user_records(

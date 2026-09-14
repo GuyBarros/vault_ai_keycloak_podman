@@ -68,8 +68,21 @@ export const POST = withRequestContext(async (req) => {
     });
   } catch (err) {
     if (err instanceof AgentUpstreamError) {
+      let error = 'agent_error';
+      let detail = err.body || 'Agent request was rejected.';
+      try {
+        const parsed = JSON.parse(err.body) as { error?: string; message?: string };
+        if (parsed.error) error = parsed.error;
+        if (parsed.message) detail = parsed.message;
+      } catch {
+        /* body is not JSON */
+      }
+      if (error === 'session_revoked') {
+        const { clearSession } = await import('@/lib/auth/session');
+        await clearSession();
+      }
       return NextResponse.json(
-        { error: 'agent_error', detail: err.body || 'Agent request was rejected.' },
+        { error, detail },
         { status: err.status, headers: { 'X-Request-ID': getRequestId(), 'Traceparent': getTraceparent(), 'Tracestate': getTracestate() } },
       );
     }

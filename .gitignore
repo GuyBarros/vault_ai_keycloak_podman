@@ -45,3 +45,4 @@ terraform.rc
 *setenv
 *.hclic
 docker-compose/.env
+docker-compose/evidence/

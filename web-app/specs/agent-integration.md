@@ -7,7 +7,7 @@ The browser never talks to the agent backend directly. All calls are server-prox
 | Browser hits | Proxies to | Contract |
 |---|---|---|
 | `POST /api/agent/query` | `POST ${AI_AGENT_API_URL}/v1/agent/query` | streaming `text/plain` (or single-shot `application/json`) |
-| `GET /api/agent/tokens` | `GET ${AI_AGENT_API_URL}/v1/agent/tokens` | JSON `{actor_token, obo_token}` |
+| `GET /api/agent/tokens` | `GET ${AI_AGENT_API_URL}/v1/agent/tokens` | JSON `{actor_token, obo_token, child_obo_token}` |
 
 If `AI_AGENT_API_URL` is empty, both routes return `502 agent_unavailable` with a clear message.
 
@@ -77,17 +77,25 @@ Otherwise content is returned unchanged.
 
 ## Token panel (`/api/agent/tokens`)
 
-Returns `{actor_token: string, obo_token: string}`. The upstream payload is unwrapped recursively: it can be the direct shape, nested under `data | result | response | payload | body`, or a stringified-JSON wrapping any of the above. Missing tokens are coerced to `""`.
+Returns `{actor_token, obo_token, child_obo_token}`. The upstream payload is unwrapped recursively: it can be the direct shape, nested under `data | result | response | payload | body`, or a stringified-JSON wrapping any of the above. Missing tokens are coerced to `""` / `null`.
 
-After each successful chat send, the React `TokenInspector` increments a refresh key and re-fetches `/api/agent/tokens`. JWT payloads are decoded **client-side** (no signature verification — these are display-only) via `decodeJwtPayload()` in `lib/jwt-decode.ts`.
+| Token | Source | What the inspector shows |
+|---|---|---|
+| Subject | `/api/auth/claims` (session cookie) | Access/id claims. `may_act.sub` = `spiffe://example.org/ai-agent`. |
+| Actor | `actor_token` | Vault Identity OIDC (`agent_id`, entity `sub`). |
+| OBO | `obo_token` | RFC 8693 + RAR. `act.sub` SPIFFE parent. `authorization_details` as JSON. |
+| Child OBO | `child_obo_token` | Present after *delegate*. `act.sub` child SPIFFE, nested `act.act` parent. Empty until then. |
 
-The Subject token comes from `/api/auth/claims` (the verified id_token claims, stored in the session cookie at login time). It loads on inspector mount and does not refresh per send.
+After each successful chat send, the React `TokenInspector` increments a refresh key and re-fetches `/api/agent/tokens`. JWT payloads are decoded **client-side** (no signature verification — these are display-only) via `decodeJwtPayload()` in `lib/jwt-decode.ts`. Nested objects (`act`, `authorization_details`) are `JSON.stringify`'d so they do not render as `[object Object]`.
+
+The Subject token comes from `/api/auth/claims` (the verified id_token claims, stored in the session cookie at login time). It loads on inspector mount and does not refresh per send. Re-login after the `may_act` mapper change is required to see SPIFFE on the subject.
 
 ## Error contract (server → browser)
 
 | Condition | Status | Body |
 |---|---|---|
 | Missing/expired session | 401 | `{error: 'unauthenticated'}` |
+| IdP session killed (3 denies) | 401 | `{error: 'session_revoked'}` — cookies cleared; stream-client calls `/api/auth/logout` |
 | Invalid request body | 400 | `{error: 'invalid_body', issues: [...]}` |
 | `AI_AGENT_API_URL` not configured | 502 | `{error: 'agent_unavailable', detail: '…'}` |
 | Upstream HTTP error | 502 | `{error: 'agent_unavailable', detail: '…'}` |

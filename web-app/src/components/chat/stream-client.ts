@@ -37,13 +37,19 @@ export async function streamAgent(
 
   if (!res.ok) {
     let detail = '';
+    let errorCode = '';
     try {
       const data = await res.json();
+      errorCode = typeof data.error === 'string' ? data.error : '';
       detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data);
     } catch {
       detail = await res.text().catch(() => '');
     }
     detail = detail.trim().replace(/^"|"$/g, '');
+    if (res.status === 401 && errorCode === 'session_revoked') {
+      window.location.href = '/api/auth/logout';
+      return;
+    }
     cb.onError(new AgentRequestError(detail || `Agent request failed (${res.status})`, res.status));
     return;
   }

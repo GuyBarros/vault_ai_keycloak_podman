@@ -59,7 +59,7 @@ export function normalizeMessageContent(content: string): string {
 
 export function normalizeAgentTokensPayload(
   data: unknown,
-): { actor_token: string; obo_token: string | null } | null {
+): { actor_token: string; obo_token: string | null; child_obo_token: string | null } | null {
   if (typeof data === 'string') {
     const stripped = data.trim();
     if (!stripped) return null;
@@ -74,12 +74,12 @@ export function normalizeAgentTokensPayload(
   const obj = data as Record<string, unknown>;
   const actor = obj.actor_token;
   const obo = obj.obo_token;
-  if (actor !== undefined || obo !== undefined) {
+  const child = obj.child_obo_token;
+  if (actor !== undefined || obo !== undefined || child !== undefined) {
     return {
       actor_token: actor == null ? '' : String(actor),
-      // Preserve null/missing OBO so the UI can render "Not available"
-      // instead of treating an empty string as a (zero-length) JWT.
       obo_token: obo == null ? null : String(obo),
+      child_obo_token: child == null ? null : String(child),
     };
   }
 

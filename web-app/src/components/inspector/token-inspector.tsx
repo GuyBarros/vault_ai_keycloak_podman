@@ -6,7 +6,7 @@ import { TokenClaims } from '@/components/inspector/token-claims';
 import { decodeJwtPayload } from '@/lib/jwt-decode';
 import { InstanaUserTracker } from '../instana-user-tracker';
 
-type TokenId = 'subject' | 'actor' | 'obo';
+type TokenId = 'subject' | 'actor' | 'obo' | 'child';
 
 interface SubjectData {
   token: string;
@@ -16,6 +16,7 @@ interface SubjectData {
 interface AgentTokenData {
   actor_token: string;
   obo_token: string | null;
+  child_obo_token?: string | null;
 }
 
 interface Props {
@@ -110,6 +111,9 @@ export function TokenInspector({ refreshKey, username }: Props) {
 
   const actorClaims = agentTokens?.actor_token ? decodeJwtPayload(agentTokens.actor_token) : null;
   const oboClaims = agentTokens?.obo_token ? decodeJwtPayload(agentTokens.obo_token) : null;
+  const childClaims = agentTokens?.child_obo_token
+    ? decodeJwtPayload(agentTokens.child_obo_token)
+    : null;
   // Distinguish "no response yet" (loading / error) from "broker returned no
   // OBO yet" (200 with obo_token=null) — only the latter renders the
   // explicit "Not available" hint in the OBO accordion.
@@ -135,7 +139,7 @@ export function TokenInspector({ refreshKey, username }: Props) {
     {
       id: 'actor',
       title: 'Agent — actor token',
-      subtitle: 'act.sub · delegated',
+      subtitle: 'Vault Identity OIDC (agent_id)',
       body: agentTokensError ? (
         <p className="inspector__error">{agentTokensError}</p>
       ) : (
@@ -145,7 +149,7 @@ export function TokenInspector({ refreshKey, username }: Props) {
     {
       id: 'obo',
       title: 'Agent — OBO token',
-      subtitle: 'on-behalf-of exchange',
+      subtitle: 'RFC 8693 + RFC 9396 RAR',
       body: agentTokensError ? (
         <p className="inspector__error">{agentTokensError}</p>
       ) : oboUnavailable ? (
@@ -154,6 +158,22 @@ export function TokenInspector({ refreshKey, username }: Props) {
         <TokenClaims
           claims={oboClaims}
           rawToken={agentTokens?.obo_token ?? undefined}
+          showRawToken
+        />
+      ),
+    },
+    {
+      id: 'child',
+      title: 'Child — read-only OBO',
+      subtitle: 'sandbox grant (users.read only)',
+      body: agentTokensError ? (
+        <p className="inspector__error">{agentTokensError}</p>
+      ) : !agentTokens?.child_obo_token ? (
+        <p className="inspector__placeholder">Not available — ask the agent to delegate</p>
+      ) : (
+        <TokenClaims
+          claims={childClaims}
+          rawToken={agentTokens.child_obo_token ?? undefined}
           showRawToken
         />
       ),

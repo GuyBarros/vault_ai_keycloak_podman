@@ -16,6 +16,7 @@ LOGGER = logging.getLogger("config")
 class Settings:
     model: str
     actor_token_path: Path
+    child_actor_token_path: Path
     token_exchange_url: str
     token_exchange_timeout_seconds: float
     obo_role_name: str
@@ -28,6 +29,7 @@ class Settings:
     vault_transform_role: str
     vault_token_path: Path
     opa_url: str
+    vault_addr: str
 
 
 def load_settings() -> Settings:
@@ -35,6 +37,9 @@ def load_settings() -> Settings:
         model=_load_model(),
         actor_token_path=Path(
             os.getenv("ACTOR_TOKEN_PATH", "/vault/secrets/actor-token")
+        ),
+        child_actor_token_path=Path(
+            os.getenv("CHILD_ACTOR_TOKEN_PATH", "/vault/child-secrets/child-actor-token")
         ),
         token_exchange_url=os.getenv(
             "TOKEN_EXCHANGE_URL", "http://localhost:8080/v1/identity/obo-token"
@@ -58,10 +63,12 @@ def load_settings() -> Settings:
             os.getenv("VAULT_TOKEN_PATH", "/vault/secrets/vault-token")
         ),
         opa_url=os.getenv("OPA_URL", "").rstrip("/"),
+        vault_addr=os.getenv("VAULT_ADDR", "http://vault:8200").rstrip("/"),
     )
     configure_logging(settings.log_level)
     serialized_settings = asdict(settings)
     serialized_settings["actor_token_path"] = str(settings.actor_token_path)
+    serialized_settings["child_actor_token_path"] = str(settings.child_actor_token_path)
     serialized_settings["vault_token_path"] = str(settings.vault_token_path)
     log_event(LOGGER, "settings_loaded", message="Settings loaded", **serialized_settings)
     return settings

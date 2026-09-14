@@ -59,19 +59,12 @@ class PostgresUserRepository(UserRepository):
     - ``direct``: a long-lived asyncpg pool authenticated with static
       USER_MCP_DB_USER / USER_MCP_DB_PASSWORD. Intended only for connectivity
       testing.
-    - ``vault``: every request mints short-lived Postgres credentials from
-      Vault. Three Vault identities on every request:
-
-      1. SPIFFE JWT-SVID (workload). Attests this process is user-mcp.
-         No secret policy.
-      2. Keycloak OBO JWT (human). Vault bound_claims on groups and OIDC
-         scope decide which action-token role may be minted. No secret
-         policy.
-      3. Vault token role (user + user-mcp). The only identity that can
-         read database/creds or call Transform.
-
-      Each tool call opens a fresh asyncpg connection bound to the issued
-      credentials, then closes it.
+    - ``vault``: every request presents the caller's Keycloak OBO (or CIBA)
+      JWT as ``X-Vault-Token``. Vault 2.1 OAuth Resource Server validates
+      RFC 9396 ``authorization_details`` (``vault:path_access``) and
+      intersects human baseline ACL with the agent-registry ceiling.
+      jwt-keycloak login is used only to probe CIBA policy. The DB
+      credential lease is revoked when the connection closes.
     """
 
     def __init__(
@@ -218,10 +211,10 @@ class PostgresUserRepository(UserRepository):
                 yield conn
             return
 
-        # vault mode: SPIFFE attests the workload, OBO identifies the human.
-        # Neither login token can call secrets. Vault mints a third action
-        # token (user + user-mcp) that is the only identity allowed to read
-        # database/creds. token_bound_cidrs keeps that identity on this CIDR.
+        # vault mode: present the Keycloak OBO/CIBA JWT as X-Vault-Token.
+        # Vault OAuth Resource Server validates RAR (vault:path_access) inline.
+        # jwt-keycloak login is only used to probe CIBA policy for list-users
+        # (and write, when ACL ciba/write/<user> is read).
         user = current_obo_user.get(None)
         obo_token = current_obo_token.get(None)
         if not user or not obo_token:
@@ -234,40 +227,15 @@ class PostgresUserRepository(UserRepository):
             )
 
         scope = current_obo_scope.get(None) or ""
-        jwt_role, action_role, db_creds_path = self._select_vault_targets(
+        jwt_role, db_creds_path = self._select_vault_targets(
             scope, write=write
         )
 
         assert self._vault is not None
-        assert self._spiffe is not None
-        svid = await self._spiffe.get_jwt_svid()
-        bind_log_context(
-            workload_spiffe_id=svid.spiffe_id,
-            vault_auth_mode="spiffe+oidc-obo+action",
-            vault_role=action_role,
-        )
-        spiffe_token = await self._vault.login_with_jwt(
-            svid.token,
-            self._spiffe_workload_role,
-            jwt_path=self._spiffe_jwt_path,
-        )
-        parent_token = await self._login_human(obo_token, jwt_role, user)
-        action_token = current_vault_action_token.get(None)
-        if not action_token:
-            display_name = f"{user}+user-mcp"
-            action_token = await self._vault.create_action_token(
-                parent_token,
-                action_role,
-                display_name=display_name,
-                meta={
-                    "preferred_username": user,
-                    "spiffe_id": svid.spiffe_id,
-                    "obo_role": jwt_role,
-                },
-                approver_token=spiffe_token,
-            )
-            current_vault_action_token.set(action_token)
-        creds = await self._vault.read_database_creds(action_token, db_creds_path)
+        vault_jwt = await self._jwt_for_vault(obo_token, jwt_role, user, write=write)
+        current_vault_action_token.set(vault_jwt)
+        bind_log_context(vault_auth_mode="oauth-resource-server")
+        creds = await self._vault.read_database_creds(vault_jwt, db_creds_path)
 
         try:
             conn = await asyncpg.connect(
@@ -295,11 +263,11 @@ class PostgresUserRepository(UserRepository):
         log_event(
             LOGGER,
             "db_call",
-            level=logging.DEBUG,
+            level=logging.INFO,
             message="Postgres connection ready (vault mode)",
             auth_mode="vault",
             db_username=creds.username,
-            vault_role=action_role,
+            vault_role=jwt_role,
             db_creds_path=db_creds_path,
             lease_id=creds.lease_id,
             lease_duration=creds.lease_duration,
@@ -308,29 +276,50 @@ class PostgresUserRepository(UserRepository):
             yield conn
         finally:
             await conn.close()
+            if creds.lease_id:
+                try:
+                    await self._vault.revoke_lease(vault_jwt, creds.lease_id)
+                    log_event(
+                        LOGGER,
+                        "vault_lease_revoked",
+                        message="Vault DB credential lease revoked after tool",
+                        lease_id=creds.lease_id,
+                    )
+                except AppError as exc:
+                    log_event(
+                        LOGGER,
+                        "vault_lease_revoke_failed",
+                        level=logging.WARNING,
+                        message=f"Failed to revoke Vault lease: {exc.message}",
+                        lease_id=creds.lease_id,
+                    )
 
-    async def _login_human(self, obo_token: str, jwt_role: str, user: str) -> str:
-        """Login with the session OBO. List-users consults ACL policy
-        ciba-list-users for this human (ciba/list-users/<username>).
+    async def _jwt_for_vault(
+        self, obo_token: str, jwt_role: str, user: str, *, write: bool
+    ) -> str:
+        """Return the JWT that Vault OAuth RS should see for this tool call.
+
+        List-users consults ACL policy ciba-list-users (deny = silent OBO,
+        matching OpenShell Jira read). Writes consult ciba/write/<user>
+        (read = CIBA HITL, matching refund/patient write).
         """
+        action = "write" if write else "list-users"
         try:
             parent = await self._vault.login_with_jwt(
                 obo_token, jwt_role, jwt_grant="session-obo"
             )
         except AppError as exc:
-            if jwt_role != self._jwt_read_role or not _vault_wants_ciba(exc):
+            if not _vault_wants_ciba(exc):
                 raise
-            return await self._step_up_ciba(jwt_role, user, action="list-users")
+            return await self._fetch_ciba_jwt(jwt_role, user, action=action)
 
-        if jwt_role != self._jwt_read_role:
-            return parent
         if not await self._vault.ciba_required_by_policy(
-            parent, action="list-users", user=user
+            parent, action=action, user=user
         ):
-            return parent
-        return await self._step_up_ciba(jwt_role, user, action="list-users")
+            return obo_token
+        return await self._fetch_ciba_jwt(jwt_role, user, action=action)
 
-    async def _step_up_ciba(
+    async def _fetch_ciba_jwt(
         self, jwt_role: str, user: str, *, action: str
     ) -> str:
         if self._ciba is None:
@@ -355,14 +344,14 @@ class PostgresUserRepository(UserRepository):
         ciba_jwt = await self._ciba.fetch_access_token(
             login_hint=user,
             binding_message=action,
+            scope="openid users.write" if action == "write" else "openid users.read",
         )
-        return await self._vault.login_with_jwt(
-            ciba_jwt, jwt_role, jwt_grant="ciba"
-        )
+        await self._vault.login_with_jwt(ciba_jwt, jwt_role, jwt_grant="ciba")
+        return ciba_jwt
 
     def _select_vault_targets(
         self, scope: str, *, write: bool
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str]:
         scopes = {part for part in scope.split() if part}
         if write:
             if _SCOPE_WRITE not in scopes:
@@ -372,7 +361,7 @@ class PostgresUserRepository(UserRepository):
                     f"OBO token scope must include '{_SCOPE_WRITE}' "
                     "to obtain write database credentials.",
                 )
-            return self._jwt_write_role, self._action_write_role, self._db_write_path
+            return self._jwt_write_role, self._db_write_path
         if _SCOPE_READ not in scopes and _SCOPE_WRITE not in scopes:
             raise AppError(
                 403,
@@ -380,7 +369,7 @@ class PostgresUserRepository(UserRepository):
                 f"OBO token scope must include '{_SCOPE_READ}' or '{_SCOPE_WRITE}' "
                 "to obtain database credentials.",
             )
-        return self._jwt_read_role, self._action_read_role, self._db_read_path
+        return self._jwt_read_role, self._db_read_path
 
     async def list_all(self) -> list[UserRecord]:
         async with self._acquire() as conn:

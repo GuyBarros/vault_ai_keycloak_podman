@@ -30,11 +30,12 @@ LangChain is responsible for:
 
 ## API Surface
 
-### Supported Endpoint
+### Supported Endpoints
 
-- `POST /v1/agent/query`
+- `POST /v1/agent/query` — streaming chat + tools
+- `GET /v1/agent/tokens` — last actor / OBO / child OBO for the inspector
 
-This endpoint accepts the conversation payload and returns a streaming plain-text response.
+The query endpoint accepts the conversation payload and returns a streaming plain-text response.
 
 
 ## Request Model
@@ -72,12 +73,20 @@ The OBO token exchange is performed using the **token-exchange service**. The us
 
 ### Actor Token Source
 
-- The `actor_token` is available at a configurable filesystem path.
+- Parent `actor_token` is at a configurable filesystem path populated by **vault-agent** (SPIFFE uid 0).
 - Default path: `/vault/secrets/actor-token`
+- Child actor JWT (sandbox): `/vault/child-secrets/child-actor-token` (`CHILD_ACTOR_TOKEN_PATH`), minted by **vault-agent-child** (uid 1001). The parent process cannot fetch that SVID.
 
-Recommended configuration parameter:
+Recommended configuration:
 
 - `ACTOR_TOKEN_PATH=/vault/secrets/actor-token`
+- `CHILD_ACTOR_TOKEN_PATH=/vault/child-secrets/child-actor-token`
+
+`GET /v1/agent/tokens` returns `{actor_token, obo_token, child_obo_token}`. `child_obo_token` is set after `delegate_research` mints a read-only OBO (`act.sub` = `spiffe://example.org/ai-agent-child`, nested `act.act` = parent SPIFFE). The LLM still runs in the parent process; only the workload identity is sandboxed.
+
+### CIBA and writes
+
+CIBA is enforced in **user-mcp**, not in the agent. Reads (`users.read`) stay silent OBO. Writes (`users.write`) require Keycloak CIBA (`ciba/write/<user>` ACL = read). Three tool denies in five minutes (`deny_tracker.py`) call Keycloak Admin logout and raise `session_revoked`.
 
 ### Vault Behavior
 
@@ -157,6 +166,8 @@ Example:
 | token_exchange_failed | identity broker failure |
 | cache_error | cache corruption |
 | agent_error | agent execution failure |
+| agent_suspended | KV `agent-lifecycle/<id> enabled=false` |
+| session_revoked | DenyTracker: 3 denies in 5 min; IdP session ended |
 
 ## Logging Requirements
 
@@ -203,11 +214,12 @@ The runtime must also log that the actor token file path was used, that the OBO 
 ## High-Level Processing Flow
 
 1. Receive `POST /v1/agent/query` request with message history.
-2. Inspect the latest user message.
-3. Prepare LangChain messages and tools.
-4. Read `actor_token` from the configured file path.
-5. Check the in-memory OBO cache and reuse a valid token when available.
-6. If no valid cached token exists, call the token-exchange service to obtain a new OBO token.
-7. Log exchange and cache activity according to the structured logging requirements.
-8. Execute the normal LangChain chat and tool flow.
-9. Stream plain-text chunks to the caller using `StreamingResponse(generate(), media_type="text/plain")`.
+2. Inspect the latest user message. Reject if OPA policy_denied or agent_suspended.
+3. Prepare LangChain messages and tools (including `delegate_research`).
+4. Read parent `actor_token` from `ACTOR_TOKEN_PATH`.
+5. Check the in-memory OBO cache (key includes subject + actor + scope + RAR) and reuse a valid token when available.
+6. If no valid cached token exists, call the token-exchange service (`delegation_act` = SPIFFE, `authorization_details` = `vault:path_access`).
+7. On write tools, user-mcp runs CIBA; the agent waits on the MCP call.
+8. On child delegate, read `CHILD_ACTOR_TOKEN_PATH` and mint a nested OBO (`users.read` only).
+9. Three denies in five minutes: Keycloak Admin logout + `session_revoked`.
+10. Stream plain-text chunks to the caller using `StreamingResponse(generate(), media_type="text/plain")`.

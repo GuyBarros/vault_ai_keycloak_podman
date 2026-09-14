@@ -23,13 +23,15 @@ Recreate the Streamlit `web-app/` (Python, Keycloak OAuth, AI agent chat) in Nex
             │  lib/log/*                │  pino + AsyncLocalStorage
             └─────┬───────────────┬─────┘
                   │               │
-        ┌─────────▼───┐    ┌──────▼─────────┐
-        │ Keycloak    │    │  AI Agent API  │
-        │  /authorize │    │  /v1/agent/    │
-        │  /token     │    │     query      │
-        │  /jwks      │    │     tokens     │
-        │  /logout    │    └────────────────┘
-        └─────────────┘
+        ┌─────────▼────────┐    ┌──────▼─────────┐
+        │ Keycloak         │    │  AI Agent API  │
+        │  /authorize      │    │  /v1/agent/    │
+        │  /token          │    │     query      │
+        │  /jwks           │    │     tokens     │
+        │  /introspect     │    └────────────────┘
+        │  /logout         │
+        │  backchannel     │
+        └──────────────────┘
 ```
 
 ## Directory map
@@ -43,7 +45,7 @@ src/
 │   ├── landing/page.tsx            # auth-gated; Header + ChatWorkspace
 │   ├── loading.tsx · error.tsx · not-found.tsx
 │   └── api/
-│       ├── auth/{login,callback,logout,claims,me}/route.ts
+│       ├── auth/{login,callback,logout,claims,me,backchannel-logout,ssf}/route.ts
 │       └── agent/{query,tokens}/route.ts
 ├── components/
 │   ├── ibm-logo.tsx · icons.tsx
@@ -55,11 +57,11 @@ src/
 │   │   ├── message-log.tsx · message-bubble.tsx · typing-indicator.tsx
 │   │   ├── composer.tsx · stream-client.ts
 │   └── inspector/
-│       ├── token-inspector.tsx     # accordion x3
-│       └── token-claims.tsx
+│       ├── token-inspector.tsx     # subject + actor + OBO + child OBO
+│       └── token-claims.tsx        # JSON.stringify for act / authorization_details
 ├── lib/
 │   ├── config.ts                   # zod env, fail-fast
-│   ├── auth/{oauth,jwks,jwt,session,pkce,cookies}.ts
+│   ├── auth/{oauth,jwks,jwt,session,pkce,cookies,revoked-sessions}.ts
 │   ├── agent/{client,normalize,stream}.ts
 │   ├── log/{logger,context,outbound,with-request-context}.ts
 │   ├── http/same-origin.ts
@@ -93,8 +95,8 @@ ChatWorkspace.handleSend()
 | Boundary | What crosses | Protection |
 |---|---|---|
 | Browser ↔ Next.js | HTTP requests, sealed cookies | HttpOnly + Secure (prod) + SameSite=Lax cookies; same-origin check on POST |
-| Next.js ↔ Keycloak | OAuth flows + JWKS | TLS; client_secret in token request body; PKCE S256 |
-| Next.js ↔ AI Agent API | Bearer access_token | TLS; token never reaches browser; X-Request-ID propagated |
+| Next.js ↔ Keycloak | OAuth flows + JWKS + introspect + backchannel | TLS; client_secret in token request body; PKCE S256; `aud` includes `web` for introspect |
+| Next.js ↔ AI Agent API | Bearer access_token | TLS; token never reaches browser; X-Request-ID propagated; `session_revoked` clears cookies |
 
 ## State stores
 
@@ -104,6 +106,8 @@ ChatWorkspace.handleSend()
 | `verify_oauth_state` | sealed cookie scoped `/api/auth/callback` | 10 min |
 | `verify_pkce_verifier` | sealed cookie scoped `/api/auth/callback` | 10 min |
 | `verify_theme` | plain cookie (HttpOnly false) | 1 year |
+| Introspection cache | in-memory Map in `getSession()` | 5 seconds per access token |
+| Revoked `sid` / subject | in-memory denylist (`revoked-sessions.ts`) | process lifetime (cleared on restart) |
 | Chat messages | client React state | session lifetime |
 
 ## Threat model (summary)
@@ -114,6 +118,7 @@ ChatWorkspace.handleSend()
 - **Open redirect** — all redirect URIs are constructed server-side from validated config; no user-supplied next-url params.
 - **Log leakage** — pino serializer redacts `access_token`, `id_token`, `client_secret`, `code`, `code_verifier`, `authorization`, `cookie`, `set-cookie` recursively.
 - **Replay of expired tokens** — `getSession()` rejects sessions whose `expires_at` has passed; middleware redirects to login.
+- **Revoked IdP session** — introspection + backchannel logout denylist (`sid` / subject). Chat `401 session_revoked` forces RP logout.
 - **Rate limiting** — TODO (commented in `/api/agent/query/route.ts`); add at edge before production.
 
 ## Coexistence with `web-app/`

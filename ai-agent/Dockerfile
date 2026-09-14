@@ -10,7 +10,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY agent_api.py agent_runtime.py config.py errors.py identity.py logging_utils.py mcp_client.py models.py opa_client.py pii_masking.py scoped_tool.py security.py tools.py ./
+COPY agent_api.py agent_runtime.py config.py errors.py identity.py logging_utils.py mcp_client.py models.py opa_client.py pii_masking.py scoped_tool.py security.py tools.py rar.py deny_tracker.py lifecycle.py delegate_tool.py session_kill.py ./
 
 EXPOSE 8000
 

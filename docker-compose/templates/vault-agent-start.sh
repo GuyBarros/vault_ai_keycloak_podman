@@ -55,14 +55,21 @@ echo "vault-agent-start: SPIRE socket ready."
 mkdir -p "$(dirname "$JWT_PATH")"
 
 fetch_jwt() {
+  spiffe_id=$1
   "$SPIRE_AGENT_BIN" api fetch jwt \
     -audience "$AUDIENCE" \
     -socketPath "$SOCKET" \
+    ${spiffe_id:+-spiffeID "$spiffe_id"} \
     2>/dev/null \
     | awk '/^token\(/ { getline; print $1; exit }'
 }
 
-TOKEN=$(fetch_jwt)
+PARENT_SPIFFE="spiffe://example.org/ai-agent"
+
+TOKEN=$(fetch_jwt "$PARENT_SPIFFE")
+if [ -z "$TOKEN" ]; then
+  TOKEN=$(fetch_jwt)
+fi
 if [ -z "$TOKEN" ]; then
   echo "vault-agent-start: failed to fetch initial JWT-SVID." >&2
   exit 1
@@ -72,11 +79,16 @@ echo "vault-agent-start: initial JWT-SVID written to $JWT_PATH"
 
 # ---------------------------------------------------------------------------
 # Background refresh loop — rewrites the file before the JWT-SVID expires.
+# Child SVID lives in vault-agent-child (unix:uid:1001); this process is uid 0
+# and cannot fetch it.
 # ---------------------------------------------------------------------------
 (
   while true; do
     sleep "$REFRESH_INTERVAL"
-    NEW_TOKEN=$(fetch_jwt)
+    NEW_TOKEN=$(fetch_jwt "$PARENT_SPIFFE")
+    if [ -z "$NEW_TOKEN" ]; then
+      NEW_TOKEN=$(fetch_jwt)
+    fi
     if [ -n "$NEW_TOKEN" ]; then
       printf '%s' "$NEW_TOKEN" > "${JWT_PATH}.tmp"
       mv "${JWT_PATH}.tmp" "$JWT_PATH"

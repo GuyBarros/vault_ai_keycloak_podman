@@ -69,7 +69,7 @@ services:
 
   vault:
     <<: *cpu
-    image: hashicorp/vault-enterprise:2.0.4-ent
+    image: hashicorp/vault-enterprise:2.1.0-ent
     container_name: vault
     ports:
       - "8200:8200"
@@ -118,7 +118,7 @@ services:
 
   vault-setup:
     <<: *cpu
-    image: hashicorp/vault:2.0.4
+    image: hashicorp/vault:2.1.0
     container_name: vault-setup
     restart: "no"
     user: root
@@ -148,7 +148,10 @@ services:
 
   keycloak:
     <<: *cpu
-    image: quay.io/keycloak/keycloak:26.7
+    build:
+      context: ../keycloak-providers
+      dockerfile: Dockerfile
+    image: keycloak-vault-rar:local
     container_name: keycloak
     ports:
       - "8081:8080"
@@ -170,7 +173,8 @@ services:
       - ./templates/demo-realm.json:/opt/keycloak/data/import/demo-realm.json:ro
     command: >-
       start-dev --import-realm
-      --features=token-exchange-delegation,parameterized-scopes,ciba
+      --features=token-exchange-delegation,parameterized-scopes,ciba,ssf
+      --spi-ssf-transmitter-allow-insecure-push-targets=true
       --spi-ciba-auth-channel-ciba-http-auth-channel-http-authentication-channel-uri=http://ciba-channel:8093/ciba/authn
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q 'issuer' <&3"]
@@ -187,8 +191,8 @@ services:
 
   # ---------------------------------------------------------------------------
   # CIBA authentication channel — Keycloak POSTs pending approvals here.
-  # Humans approve at http://localhost:8093. ACL policy ciba-list-users
-  # (ciba/list-users/<username>) is the per-actor switch for that action.
+  # Humans approve writes at http://localhost:8093. ACL policy ciba-write
+  # (ciba/write/<username>) is the per-actor switch. Reads are silent OBO.
   # ---------------------------------------------------------------------------
   ciba-channel:
     <<: *cpu
@@ -265,7 +269,7 @@ services:
     <<: *cpu
     # Use the same Alpine-based vault image so we have /bin/sh to read the
     # join-token file.  The spire-agent binary is downloaded at startup.
-    image: hashicorp/vault:2.0.4
+    image: hashicorp/vault:2.1.0
     container_name: spire-agent
     hostname: spire-agent
     user: root
@@ -293,7 +297,7 @@ services:
   # ---------------------------------------------------------------------------
   spire-setup:
     <<: *cpu
-    image: hashicorp/vault:2.0.4
+    image: hashicorp/vault:2.1.0
     container_name: spire-setup
     restart: "no"
     # Socket dir is 0700 root (SPIRE umask 0027); vault image user cannot dial it.
@@ -433,7 +437,7 @@ services:
   # ---------------------------------------------------------------------------
   vault-agent:
     <<: *cpu
-    image: hashicorp/vault:2.0.4
+    image: hashicorp/vault:2.1.0
     container_name: vault-agent
     restart: unless-stopped
     user: root
@@ -465,6 +469,35 @@ services:
     networks:
       - app-network
 
+  # Unprivileged child identity (OpenShell sandbox analogue).
+  # unix:uid:1001 so SPIRE will not hand this SVID to vault-agent (uid 0).
+  vault-agent-child:
+    <<: *cpu
+    image: hashicorp/vault:2.1.0
+    container_name: vault-agent-child
+    restart: unless-stopped
+    user: "1001:1001"
+    pid: "service:spire-agent"
+    depends_on:
+      vault-setup:
+        condition: service_completed_successfully
+      spire-setup:
+        condition: service_completed_successfully
+      spire-agent:
+        condition: service_started
+    environment:
+      VAULT_ADDR: http://vault:8200
+      SPIRE_ARCH: "${SPIRE_ARCH:?Set SPIRE_ARCH via setenv and make}"
+    entrypoint:
+      - /bin/sh
+      - /vault/config/vault-agent-child-start.sh
+    volumes:
+      - ./templates/vault-agent-child-start.sh:/vault/config/vault-agent-child-start.sh:ro
+      - spire-agent-socket:/tmp/spire-agent:ro
+      - vault-child-secrets:/vault/child-secrets
+    networks:
+      - app-network
+
   ai-agent:
     <<: *cpu
     build:
@@ -476,6 +509,8 @@ services:
       - "8000:8000"
     depends_on:
       vault-agent:
+        condition: service_started
+      vault-agent-child:
         condition: service_started
       litellm:
         condition: service_healthy
@@ -490,15 +525,22 @@ services:
     environment:
       TOKEN_EXCHANGE_URL: "http://token-exchange:9090/v1/identity/obo-token"
       ACTOR_TOKEN_PATH: "/vault/secrets/actor-token"
+      CHILD_ACTOR_TOKEN_PATH: "/vault/child-secrets/child-actor-token"
       USER_MCP_URL: "http://user-mcp:8090/mcp"
       LOKI_URL: "http://loki:3100"
       VAULT_TRANSFORM_URL: "http://vault:8200/v1/transform"
       VAULT_TRANSFORM_ROLE: "user-mcp-transform"
       VAULT_TOKEN_PATH: "/vault/secrets/vault-token"
+      VAULT_ADDR: "http://vault:8200"
       OPA_URL: "http://opa:8181"
+      KEYCLOAK_URL: "http://keycloak:8080"
+      KEYCLOAK_REALM: "demo"
+      KEYCLOAK_ADMIN_USER: "admin"
+      KEYCLOAK_ADMIN_PASSWORD: "admin"
     volumes:
       - ./templates/ai-agent.env:/app/.env:ro
       - vault-secrets:/vault/secrets:ro
+      - vault-child-secrets:/vault/child-secrets:ro
     networks:
       - app-network
 
@@ -675,3 +717,9 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=10m,mode=0750"
+  vault-child-secrets:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,mode=0755,uid=1001,gid=1001"

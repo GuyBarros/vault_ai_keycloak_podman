@@ -4,7 +4,7 @@ import { Fragment, useState } from 'react';
 import { formatClaimValue } from '@/lib/jwt-decode';
 import { CheckIcon, CopyIcon } from '@/components/icons';
 
-const PRIORITY = ['iss', 'sub', 'aud', 'amr', 'iat', 'exp', 'scope', 'client', 'act'] as const;
+const PRIORITY = ['iss', 'sub', 'aud', 'act', 'may_act', 'authorization_details', 'amr', 'iat', 'exp', 'scope', 'client'] as const;
 
 interface Props {
   claims: Record<string, unknown> | null;

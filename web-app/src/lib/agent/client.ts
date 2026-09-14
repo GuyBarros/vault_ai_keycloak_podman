@@ -186,7 +186,7 @@ export async function getAgentTokens(
   accessToken: string,
   traceparent: string,
   tracestate: string,
-): Promise<{ actor_token: string; obo_token: string | null }> {
+): Promise<{ actor_token: string; obo_token: string | null; child_obo_token: string | null }> {
   ensureConfigured();
   log.debug({ url: agent.tokensUrl }, 'Fetching agent tokens');
 

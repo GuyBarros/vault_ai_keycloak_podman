@@ -39,7 +39,9 @@ class CibaClient:
         self._poll_timeout = poll_timeout_seconds
         self._approve_url = approve_url
 
-    async def fetch_access_token(self, login_hint: str, binding_message: str) -> str:
+    async def fetch_access_token(
+        self, login_hint: str, binding_message: str, scope: str | None = None
+    ) -> str:
         if not self._client_id or not self._client_secret:
             raise AppError(
                 500,
@@ -55,7 +57,7 @@ class CibaClient:
                     "client_id": self._client_id,
                     "client_secret": self._client_secret,
                     "login_hint": login_hint,
-                    "scope": self._scope,
+                    "scope": scope or self._scope,
                     "binding_message": _binding_message(binding_message),
                 },
             )
@@ -121,7 +123,7 @@ class CibaClient:
                         403,
                         "invalid_request",
                         "CIBA was denied or expired. Approve the request at "
-                        f"{self._approve_url} and retry list users.",
+                        f"{self._approve_url} and retry.",
                     )
                 raise AppError(
                     502,
@@ -140,7 +142,7 @@ class CibaClient:
 def _binding_message(text: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in text)
     cleaned = cleaned.strip("-")[:50]
-    return cleaned or "list-users"
+    return cleaned or "write"
 
 
 def _json(resp: httpx.Response) -> dict:

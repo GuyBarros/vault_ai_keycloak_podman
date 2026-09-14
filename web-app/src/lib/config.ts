@@ -80,6 +80,7 @@ export const oidc = {
   tokenUrl: `${internalRealmBase}/protocol/openid-connect/token`,
   jwksUrl: `${internalRealmBase}/protocol/openid-connect/certs`,
   logoutUrl: `${internalRealmBase}/protocol/openid-connect/logout`,
+  introspectUrl: `${internalRealmBase}/protocol/openid-connect/token/introspect`,
 } as const;
 
 export const agent = {

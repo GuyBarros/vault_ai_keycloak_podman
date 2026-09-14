@@ -151,8 +151,8 @@
       <p>
         Each request starts with what the user received from the agent (the listing,
         the denial, the created user). Then the trail walks back through Vault —
-        including CIBA phone approval when policy <code>ciba-list-users</code>
-        requires it for that actor on that action —
+        including CIBA phone approval when policy <code>ciba-write</code>
+        requires it for that actor on a write —
         to the human who asked.
       </p>
     </div>
@@ -175,8 +175,8 @@
       </article>
       <article class="id-card ciba">
         <div class="k">Step-up — CIBA</div>
-        <h2>Vault refuses silent OBO reads</h2>
-        <p>ACL policy <code>ciba-list-users</code> is the list-users action. <code>read</code> on <code>ciba/list-users/admin</code> or <code>…/user</code> requires phone Approve for that human; <code>deny</code> is silent OBO.</p>
+        <h2>Vault refuses silent OBO writes</h2>
+        <p>ACL policy <code>ciba-write</code> is the write action. <code>read</code> on <code>ciba/write/admin</code> or <code>…/user</code> requires phone Approve; list/search stay silent OBO.</p>
       </article>
       <article class="id-card human">
         <div class="k">Actor — human</div>
@@ -347,7 +347,7 @@
       const user = evs.map((e) => e.preferred_username).find(Boolean) || "unknown";
       const toolName = evs.map((e) => e.tool).find(Boolean) || "";
       const dbUser = evs.map((e) => e.db_username).find(Boolean) || "";
-      const cibaAction = (cibaRequired && cibaRequired.ciba_action) || "list-users";
+      const cibaAction = (cibaRequired && cibaRequired.ciba_action) || "write";
       const prompt = (ask && ask.user_message) || (replyEv && replyEv.user_message) || "";
       const reply = (replyEv && replyEv.response_text)
         || (llmFail && (llmFail.error_message || llmFail.message))
@@ -407,7 +407,7 @@
         chain.push({
           kind: "ciba",
           why: "because",
-          text: `Vault policy ciba-list-users required CIBA for ${user} on ${cibaAction}`,
+          text: `Vault policy ciba-write required CIBA for ${user} on ${cibaAction}`,
         });
       }
       if (cibaDenied) {

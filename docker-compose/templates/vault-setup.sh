@@ -193,15 +193,26 @@ path "sys/control-group/request" {
 EOF
 
 # CIBA is tied to the action, then to the actor on that action.
-# Policy ciba-list-users is the list-users switch (Vault UI: ACL policies).
-#   read on ciba/list-users/<username> = that human must Approve
-#   deny                              = silent OBO for that human on this action
-# Create/update/delete do not consult this policy.
+# OpenShell: read is silent OBO (Jira-like); write requires HITL (refund-like).
+#   deny on ciba/<action>/<username> = silent OBO
+#   read on ciba/<action>/<username> = that human must Approve
 vault policy write ciba-list-users - <<'EOF'
 path "ciba/list-users/admin" {
-  capabilities = ["read"]
+  capabilities = ["deny"]
 }
 path "ciba/list-users/user" {
+  capabilities = ["deny"]
+}
+path "sys/capabilities-self" {
+  capabilities = ["update"]
+}
+EOF
+
+vault policy write ciba-write - <<'EOF'
+path "ciba/write/admin" {
+  capabilities = ["read"]
+}
+path "ciba/write/user" {
   capabilities = ["read"]
 }
 path "sys/capabilities-self" {
@@ -239,9 +250,9 @@ EOF
 # writers may also read (list users); readers cannot login to the write role.
 # token_bound_cidrs pins issued tokens (and login) to the user-mcp workload
 # address — a laptop with a stolen OBO cannot mint the action identity.
-# CIBA for list-users is ACL policy ciba-list-users (per-actor paths), not a
-# JWT bound_claim. token_policies includes that policy so each human can
-# probe ciba/list-users/<their username> after login.
+# CIBA for writes is ACL policy ciba-write (per-actor paths). Reads are
+# silent OBO (deny on ciba/list-users/<username>). token_policies includes
+# the matching policy so each human can probe the switch after login.
 vault write auth/jwt-keycloak/role/user-mcp-oidc-read - <<'EOF'
 {
   "role_type": "jwt",
@@ -270,7 +281,7 @@ vault write auth/jwt-keycloak/role/user-mcp-oidc-write - <<'EOF'
     "groups": ["writers"],
     "scope": "*users.write*"
   },
-  "token_policies": ["user-mcp-mint-action-write"],
+  "token_policies": ["user-mcp-mint-action-write", "ciba-write"],
   "token_bound_cidrs": ["172.28.0.20/32"],
   "token_ttl": 300,
   "token_max_ttl": 900,
@@ -335,6 +346,9 @@ path "litellm/data/config" {
 path "transform/encode/user-mcp-transform" {
   capabilities = ["create", "update"]
 }
+path "agent-lifecycle/data/ai-agent" {
+  capabilities = ["read"]
+}
 EOF
 
 vault write auth/jwt-spiffe/role/ai-agent-spiffe - <<'EOF'
@@ -344,6 +358,24 @@ vault write auth/jwt-spiffe/role/ai-agent-spiffe - <<'EOF'
   "bound_audiences": ["TESTING"],
   "bound_subject": "spiffe://example.org/ai-agent",
   "token_policies": ["default", "ai-agent-spiffe-policy"],
+  "token_period": 1800,
+  "token_type": "service"
+}
+EOF
+
+vault policy write ai-agent-child-spiffe-policy - <<'EOF'
+path "identity/oidc/token/child-role" {
+  capabilities = ["read"]
+}
+EOF
+
+vault write auth/jwt-spiffe/role/ai-agent-child-spiffe - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["TESTING"],
+  "bound_subject": "spiffe://example.org/ai-agent-child",
+  "token_policies": ["default", "ai-agent-child-spiffe-policy"],
   "token_period": 1800,
   "token_type": "service"
 }
@@ -396,7 +428,7 @@ vault write identity/entity-alias \
 # token-exchange validates actor_token.sub against the actor user's id.
 # We update the Keycloak user id to the Vault entity UUID so they match.
 # curl is required for the PUT call — install it transiently via apk.
-apk add --no-cache curl >/dev/null 2>&1
+apk add --no-cache curl jq >/dev/null 2>&1
 
 echo "vault-setup: obtaining Keycloak admin token..."
 KC_TOKEN=$(wget -qO- \
@@ -429,6 +461,65 @@ if [ "${HTTP_STATUS}" = "204" ]; then
   echo "vault-setup: Keycloak ai-agent user id updated to ${ENTITY_ID}"
 else
   echo "vault-setup: WARNING — failed to update Keycloak ai-agent user id (HTTP ${HTTP_STATUS})" >&2
+fi
+
+# RFC 8693 may_act.sub must be the SPIFFE ID (same string as act.sub / Vault
+# OAuth alias). The parameterized user-property mapper copies Keycloak user
+# id, which is either "ai-agent" or the Vault entity UUID — never SPIFFE —
+# because token-exchange-delegation matches actor_token.sub to that user id.
+echo "vault-setup: setting may_act.sub to SPIFFE on client scope delegation..."
+DELEGATION_SCOPE_ID=$(curl -sS \
+  -H "Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/client-scopes" \
+  | jq -r '.[] | select(.name=="delegation") | .id')
+MAY_ACT_MAPPER=$(curl -sS \
+  -H "Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/client-scopes/${DELEGATION_SCOPE_ID}/protocol-mappers/models" \
+  | jq -c '.[] | select(.name=="may_act sub")')
+MAY_ACT_MAPPER_ID=$(printf '%s' "${MAY_ACT_MAPPER}" | jq -r '.id')
+MAY_ACT_UPDATED=$(printf '%s' "${MAY_ACT_MAPPER}" | jq -c \
+  --arg v "spiffe://example.org/ai-agent" \
+  '.protocolMapper="oidc-hardcoded-claim-mapper"
+   | .config["claim.value"]=$v
+   | .config["claim.name"]="may_act.sub"
+   | .config["jsonType.label"]="String"
+   | .config["access.token.claim"]="true"
+   | .config["id.token.claim"]="true"
+   | .config["introspection.token.claim"]="true"
+   | del(.config["user.attribute"], .config["multivalued"])')
+MAY_ACT_HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
+  -X PUT \
+  -H "Authorization: Bearer ${KC_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "${MAY_ACT_UPDATED}" \
+  "http://keycloak:8080/admin/realms/demo/client-scopes/${DELEGATION_SCOPE_ID}/protocol-mappers/models/${MAY_ACT_MAPPER_ID}")
+if [ "${MAY_ACT_HTTP}" = "204" ]; then
+  echo "vault-setup: may_act.sub = spiffe://example.org/ai-agent"
+else
+  echo "vault-setup: WARNING — failed to set may_act.sub SPIFFE (HTTP ${MAY_ACT_HTTP})" >&2
+fi
+
+echo "vault-setup: enabling OIDC backchannel logout on client web..."
+WEB_CLIENT=$(curl -sS \
+  -H "Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/clients?clientId=web")
+WEB_ID=$(printf '%s' "${WEB_CLIENT}" | jq -r '.[0].id')
+WEB_BODY=$(curl -sS \
+  -H "Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/clients/${WEB_ID}")
+WEB_UPDATED=$(printf '%s' "${WEB_BODY}" | jq -c \
+  '.attributes["backchannel.logout.url"]="http://web:8080/api/auth/backchannel-logout"
+   | .attributes["backchannel.logout.session.required"]="true"')
+WEB_HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
+  -X PUT \
+  -H "Authorization: Bearer ${KC_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "${WEB_UPDATED}" \
+  "http://keycloak:8080/admin/realms/demo/clients/${WEB_ID}")
+if [ "${WEB_HTTP}" = "204" ]; then
+  echo "vault-setup: web backchannel.logout.url set"
+else
+  echo "vault-setup: WARNING — failed to set backchannel logout (HTTP ${WEB_HTTP})" >&2
 fi
 
 # KV v2 secrets for LiteLLM
@@ -488,5 +579,226 @@ vault write auth/jwt-spiffe/role/user-mcp-spiffe-transform - <<'EOF'
   "token_type": "service"
 }
 EOF
+
+# ── Vault 2.1 native Agentic IAM (OAuth Resource Server + Agent Registry) ──
+# user-mcp presents the Keycloak OBO (or CIBA) JWT as X-Vault-Token. Vault
+# validates it inline, resolves the human from `sub` and the actor from
+# `act.sub` (when present), and intersects:
+#   1. human baseline ACL
+#   2. agent-registry ceiling on the actor (or on the human for CIBA tokens)
+#   3. RFC 9396 authorization_details (vault:path_access)
+# jwt-keycloak + SPIFFE action tokens stay for CIBA policy probe; secrets
+# themselves are gated by this OAuth RS path.
+
+# Native RAR (oauth-resource-server + Agent Registry) shipped in 2.0.3 behind
+# an activation flag. Vault 2.1 made it GA and started requiring the Agentic
+# IAM license term (post 2026-09-01). This demo stays on 2.0.4-ent so the
+# current trial license can activate the flag. On 2.1+, skip activate and
+# expect Feature Not Enabled unless the .hclic lists Agentic IAM.
+if vault read sys/activation-flags >/dev/null 2>&1 && vault read sys/activation-flags | grep -q "oauth-resource-server"; then
+  vault read sys/activation-flags | grep "^activated" | grep -q "oauth-resource-server" \
+    || vault write -f sys/activation-flags/oauth-resource-server/activate
+  echo "vault-setup: oauth-resource-server feature activated."
+else
+  echo "vault-setup: oauth-resource-server is GA on this Vault version, no activation needed."
+fi
+
+if vault write sys/config/oauth-resource-server/keycloak-demo \
+  issuer_id="http://localhost:8081/realms/demo" \
+  use_jwks=true \
+  jwks_uri="http://keycloak:8080/realms/demo/protocol/openid-connect/certs" \
+  user_claim="sub" \
+  jwt_type="access_token" \
+  audiences="user-mcp" \
+  optional_authorization_details=false
+then
+  echo "vault-setup: oauth-resource-server profile 'keycloak-demo' configured."
+else
+  echo "vault-setup: failed to configure oauth-resource-server (need a Vault Enterprise license with Agentic IAM)." >&2
+  vault read sys/license/status || true
+  exit 1
+fi
+
+vault policy write user-mcp-agentic-read - <<'EOF'
+path "database/creds/user-mcp-read-role" {
+  capabilities = ["read"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+path "sys/leases/revoke" {
+  capabilities = ["update"]
+}
+path "sys/capabilities-self" {
+  capabilities = ["update"]
+}
+path "ciba/list-users/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/list-users/user" {
+  capabilities = ["deny"]
+}
+path "ciba/write/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/write/user" {
+  capabilities = ["deny"]
+}
+EOF
+
+vault policy write user-mcp-agentic-write - <<'EOF'
+path "database/creds/user-mcp-write-role" {
+  capabilities = ["read"]
+}
+path "sys/leases/revoke" {
+  capabilities = ["update"]
+}
+path "transform/encode/user-mcp-transform" {
+  capabilities = ["create", "update"]
+}
+path "ciba/write/admin" {
+  capabilities = ["read"]
+}
+path "ciba/write/user" {
+  capabilities = ["read"]
+}
+EOF
+
+echo "vault-setup: looking up demo user ids in Keycloak for agentic IAM entities..."
+KC_READER_USER_ID=$(wget -qO- \
+  --header="Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/users?username=user&exact=true" \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+KC_WRITER_USER_ID=$(wget -qO- \
+  --header="Authorization: Bearer ${KC_TOKEN}" \
+  "http://keycloak:8080/admin/realms/demo/users?username=admin&exact=true" \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+echo "vault-setup: keycloak user id=${KC_READER_USER_ID} admin id=${KC_WRITER_USER_ID}"
+
+vault write identity/entity name=demo-user policies="user-mcp-agentic-read"
+DEMO_USER_ENTITY_ID=$(vault read -field=id identity/entity/name/demo-user)
+
+vault write identity/entity name=demo-admin policies="user-mcp-agentic-read,user-mcp-agentic-write"
+DEMO_ADMIN_ENTITY_ID=$(vault read -field=id identity/entity/name/demo-admin)
+
+# issuer= tells Vault to bind the alias to the OAuth resource-server profile.
+vault write identity/entity-alias \
+  name="${KC_READER_USER_ID}" \
+  canonical_id="${DEMO_USER_ENTITY_ID}" \
+  issuer="http://localhost:8081/realms/demo" \
+  external_id="${KC_READER_USER_ID}"
+
+vault write identity/entity-alias \
+  name="${KC_WRITER_USER_ID}" \
+  canonical_id="${DEMO_ADMIN_ENTITY_ID}" \
+  issuer="http://localhost:8081/realms/demo" \
+  external_id="${KC_WRITER_USER_ID}"
+
+# CIBA tokens have no act claim — the human must be a registered agent.
+# OBO tokens carry act.sub = SPIFFE ID (oauth-resource-server alias name).
+# Repeat ceiling_policies= so the CLI sends a string slice (a JSON array string
+# is split on commas and stored as garbage policy names).
+register_agent() {
+  _name=$1
+  _entity=$2
+  shift 2
+  _id=$(vault read -field=id "agent-registry/registration/display-name/${_name}" 2>/dev/null || true)
+  if [ -n "${_id}" ]; then
+    vault write agent-registry/register id="${_id}" display_name="${_name}" entity_id="${_entity}" "$@"
+  else
+    vault write agent-registry/register display_name="${_name}" entity_id="${_entity}" "$@"
+  fi
+}
+
+# One oauth-resource-server alias per entity+mount. Name it with the SPIFFE ID
+# so Vault RS resolves act.sub the same way the video shows.
+set_oauth_spiffe_alias() {
+  _canonical=$1
+  _spiffe=$2
+  for _aid in $(vault list identity/entity-alias/id 2>/dev/null | awk 'NR>2 {print $1}'); do
+    [ -z "${_aid}" ] && continue
+    _info=$(vault read "identity/entity-alias/id/${_aid}" 2>/dev/null || true)
+    echo "${_info}" | grep -q "${_canonical}" || continue
+    echo "${_info}" | grep -q oauth-resource-server || continue
+    _cur=$(echo "${_info}" | awk '/^name[ \t]/ {print $2; exit}')
+    if [ "${_cur}" != "${_spiffe}" ]; then
+      vault delete "identity/entity-alias/id/${_aid}" \
+        || echo "vault-setup: could not delete leftover oauth alias ${_cur}"
+    fi
+  done
+  vault write identity/entity-alias \
+    name="${_spiffe}" \
+    canonical_id="${_canonical}" \
+    issuer="http://localhost:8081/realms/demo" \
+    external_id="${_spiffe}" \
+    || echo "vault-setup: oauth alias ${_spiffe} already present (ok on re-run)."
+}
+
+register_agent demo-user "${DEMO_USER_ENTITY_ID}" \
+  ceiling_policies=user-mcp-agentic-read
+
+register_agent demo-admin "${DEMO_ADMIN_ENTITY_ID}" \
+  ceiling_policies=user-mcp-agentic-read \
+  ceiling_policies=user-mcp-agentic-write
+
+register_agent ai-agent "${ENTITY_ID}" \
+  ceiling_policies=user-mcp-agentic-read \
+  ceiling_policies=user-mcp-agentic-write
+
+# Child sandbox: own SPIRE identity + narrower registry ceiling (read only).
+vault write identity/entity name=ai-agent-child \
+  policies="user-mcp-agentic-read,ai-agent-child-spiffe-policy"
+CHILD_ENTITY_ID=$(vault read -field=id identity/entity/name/ai-agent-child)
+register_agent ai-agent-child "${CHILD_ENTITY_ID}" \
+  ceiling_policies=user-mcp-agentic-read
+
+vault write identity/entity-alias \
+  name="spiffe://example.org/ai-agent-child" \
+  canonical_id="${CHILD_ENTITY_ID}" \
+  mount_accessor="${JWT_SPIFFE_ACCESSOR}" \
+  || echo "vault-setup: ai-agent-child jwt-spiffe alias already present (ok on re-run)."
+
+set_oauth_spiffe_alias "${CHILD_ENTITY_ID}" "spiffe://example.org/ai-agent-child"
+
+vault write identity/oidc/role/child-role \
+  key=default \
+  ttl=3600s \
+  template="$(cat <<'EOF'
+{
+  "org": "ibm",
+  "bu": "hr",
+  "department": "payroll",
+  "service_group": "employee-profile",
+  "entity_id": "ai-agent-child",
+  "agent_id": "ai-agent-child",
+  "parent_agent_id": "ai-agent"
+}
+EOF
+)"
+
+vault write identity/oidc/role/agent-role \
+  key=default \
+  ttl=3600s \
+  template="$(cat <<'EOF'
+{
+  "org": "ibm",
+  "bu": "hr",
+  "department": "payroll",
+  "service_group": "employee-profile",
+  "entity_id": "ai-agent",
+  "agent_id": "ai-agent"
+}
+EOF
+)"
+
+set_oauth_spiffe_alias "${ENTITY_ID}" "spiffe://example.org/ai-agent"
+
+# Owner can suspend the agent: vault kv put agent-lifecycle/ai-agent enabled=false
+vault secrets list | grep -q "^agent-lifecycle/" || \
+  vault secrets enable -path=agent-lifecycle -version=2 kv
+vault kv put agent-lifecycle/ai-agent enabled=true
+
+echo "vault-setup: agentic IAM entities + agent registry complete."
 
 echo "vault-setup: done."

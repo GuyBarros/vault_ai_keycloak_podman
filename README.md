@@ -71,7 +71,8 @@ make
 
 #### URLs
 WebApp UI: [localhost:8080](http://localhost:8080)  
-CIBA approval: [localhost:8093](http://localhost:8093)  
+CIBA approval (write HITL): [localhost:8093](http://localhost:8093)  
+Audit trail: [localhost:8092](http://localhost:8092)  
 Keycloak: [localhost:8081](http://localhost:8081)  
 LiteLLM: [localhost:4000/ui](http://localhost:4000/ui)  
 Vault: [localhost:8200](http://localhost:8200)
@@ -97,7 +98,30 @@ Login with email `user@demo.com` / password `user` if username `user` is rejecte
 (00:30)
 ![Demo User gif](demo_user.gif)
 
-OBS: This is a demo app to showcase Vault capabilities and was not extensively tested in terms of AI agent complex prompts. Plase use simple commands like *list*, *create*, *etc*. 
-For **create_user** tool, only first name and email are enforced. If the model complains, be specific.
+OBS: This is a demo app to showcase Vault capabilities and was not extensively tested in terms of AI agent complex prompts. Please use simple commands like *list*, *create*, *etc*.
+For **create_user**, only first name and email are enforced. If the model complains, be specific.
 
-On `feat/vault-ciba-stepup`, **list users** is an action with its own ACL policy `ciba-list-users`. In the Vault UI (Access control → ACL policies) set `ciba/list-users/admin` and `ciba/list-users/user` to `read` (CIBA) or `deny` (silent OBO) independently. Create user is a different action and still uses the session OBO. Open [localhost:8093](http://localhost:8093) to Approve. The audit trail is at [localhost:8092](http://localhost:8092).
+## Video patterns (IBM Agent Identity + NVIDIA OpenShell)
+
+On `feat/agentic-ai-patterns` the stack is **Vault Enterprise 2.1** as an OAuth resource server. The agent OBO JWT carries RFC 9396 `authorization_details` (`type=vault:path_access`). This is the same identity contract as the videos, on the `users` MCP — not a clone of IBM Verify, Jira, or OpenShell UI.
+
+| Video beat | What to do here |
+|---|---|
+| Silent read (Jira) | Chat: `list users`. OBO `users.read`. CIBA at [localhost:8093](http://localhost:8093) stays Waiting. |
+| Write + HITL (refund) | Chat: `create a user`. Approve on :8093. Then Vault write-role + DB lease. |
+| RFC 8693 `act` | Inspector: subject `may_act.sub` and OBO `act.sub` are both `spiffe://example.org/ai-agent`. `preferred_username` stays `ai-agent`. |
+| Child sandbox | Chat: `delegate`. Child OBO `act.sub=spiffe://example.org/ai-agent-child` (nested `act.act` = parent). List works; create is `access_denied`. Sidecar `vault-agent-child` is uid **1001**; parent uid 0 cannot fetch that SVID. |
+| 3 unauthorized → session dead | Three denied writes in five minutes. Keycloak Admin logout + token introspection + OIDC backchannel. Chat returns `401 session_revoked`. |
+| Owner suspends agent | `vault kv put agent-lifecycle/ai-agent enabled=false` → HTTP 403 `agent_suspended` until re-enabled. |
+| Agent registry | `vault list agent-registry/registration/display-name` (the mount root is empty by design). |
+
+After `make`:
+
+```bash
+make prove-rar           # Keycloak RAR token accepted/denied by Vault
+make prove-ciba-vault    # HITL on write; list stays silent OBO
+make prove-obo-vault     # jwt-keycloak bound claims
+make prove-video         # 14 video beats (OBO, RAR, CIBA, sandbox, kill, suspend)
+```
+
+The LLM for the child still runs in the parent process (`delegate_research`); only the workload identity is sandboxed. Keycloak `--features=ssf` is in compose for the next recreate; live kill is Admin logout + introspection + backchannel.

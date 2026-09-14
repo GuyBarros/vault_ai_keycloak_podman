@@ -24,6 +24,18 @@ class OBOTokenRequest(BaseModel):
         min_length=1,
         description="Space-separated OAuth scopes (RFC 8693 'scope' parameter)",
     )
+    authorization_details: str | None = Field(
+        default=None,
+        description="RFC 9396 authorization_details JSON array (vault:path_access)",
+    )
+    act: str | None = Field(
+        default=None,
+        description="RFC 8693 act JSON. Child sandbox nested act.act is the parent.",
+    )
+    child: bool = Field(
+        default=False,
+        description="Mint a read-only child actor (act.sub = spiffe://example.org/ai-agent-child).",
+    )
 
 
 class OBOTokenResponse(BaseModel):

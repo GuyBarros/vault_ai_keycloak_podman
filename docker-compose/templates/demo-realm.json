@@ -2,6 +2,7 @@
   "realm": "demo",
   "enabled": true,
   "attributes": {
+    "ssf.transmitterEnabled": "true",
     "token-exchange": "true",
     "cibaBackchannelTokenDeliveryMode": "poll",
     "cibaExpiresIn": "120",
@@ -31,7 +32,7 @@
       "publicClient": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "http://localhost:8080/api/auth/callback",
@@ -58,7 +59,9 @@
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:8080/",
-        "token.exchange.grant.enabled": "true"
+        "token.exchange.grant.enabled": "true",
+        "backchannel.logout.url": "http://web:8080/api/auth/backchannel-logout",
+        "backchannel.logout.session.required": "true"
       },
       "protocolMappers": [
         {
@@ -86,6 +89,65 @@
             "introspection.token.claim": "true",
             "add.to.lightweight.access.token": "true"
           }
+        },
+        {
+          "name": "aud-web",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "web",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "introspection.token.claim": "true",
+            "add.to.lightweight.access.token": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "human-cli",
+      "name": "human-cli",
+      "description": "Password-grant human subject for RFC 8693 tests. No rfc9068 — browser tokens stay typ=Bearer.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "human-cli-secret",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["openid", "profile", "email", "roles"],
+      "optionalClientScopes": ["users.read", "users.write", "Agent.Invoke", "delegation"],
+      "protocolMappers": [
+        {
+          "name": "aud-token-exchange",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "token-exchange",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "user-mcp",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
         }
       ]
     },
@@ -106,7 +168,8 @@
       "defaultClientScopes": [],
       "attributes": {
         "token.exchange.grant.enabled": "true",
-        "standard.token.exchange.enabled": "true"
+        "standard.token.exchange.enabled": "true",
+        "access.token.header.type.rfc9068": "true"
       },
       "optionalClientScopes": [
         "users.read",
@@ -114,6 +177,17 @@
         "delegation"
       ],
       "protocolMappers": [
+        {
+          "name": "vault-jwt-compat",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-vault-jwt-compat-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
         {
           "name": "aud-user-mcp",
           "protocol": "openid-connect",
@@ -132,7 +206,7 @@
     {
       "clientId": "ciba-client",
       "name": "ciba-client",
-      "description": "Confidential client that starts CIBA when Vault bound_claims require a fresh human approval before minting read creds",
+      "description": "Confidential client that starts CIBA when Vault policy requires human approval before a write",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "secret": "ciba-client-secret",
@@ -144,12 +218,24 @@
       "serviceAccountsEnabled": false,
       "fullScopeAllowed": false,
       "defaultClientScopes": ["openid", "profile", "roles"],
-      "optionalClientScopes": ["users.read"],
+      "optionalClientScopes": ["users.read", "users.write"],
       "attributes": {
         "oidc.ciba.grant.enabled": "true",
-        "ciba.backchannel.token.delivery.mode": "poll"
+        "ciba.backchannel.token.delivery.mode": "poll",
+        "access.token.header.type.rfc9068": "true"
       },
       "protocolMappers": [
+        {
+          "name": "vault-jwt-compat",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-vault-jwt-compat-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
         {
           "name": "aud-user-mcp",
           "protocol": "openid-connect",
@@ -211,6 +297,52 @@
       "attributes": {
         "token.exchange.grant.enabled": "true"
       }
+    },
+    {
+      "clientId": "rar-cli",
+      "name": "rar-cli",
+      "description": "CLI client used to prove Keycloak RAR tokens against Vault",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "rar-cli-secret",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["openid", "profile", "email", "users.read"],
+      "optionalClientScopes": ["users.read", "users.write"],
+      "attributes": {
+        "access.token.header.type.rfc9068": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "vault-jwt-compat",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-vault-jwt-compat-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "aud-user-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "user-mcp",
+            "add.to.id.token": "false",
+            "add.to.access.token": "true",
+            "introspection.token.claim": "true",
+            "add.to.lightweight.access.token": "true"
+          }
+        }
+      ]
     }
   ],
 
@@ -232,12 +364,11 @@
         {
           "name": "may_act sub",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-parameterized-scope-user-property-mapper",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
           "consentRequired": false,
           "config": {
             "introspection.token.claim": "true",
-            "multivalued": "false",
-            "user.attribute": "id",
+            "claim.value": "spiffe://example.org/ai-agent",
             "id.token.claim": "true",
             "access.token.claim": "true",
             "claim.name": "may_act.sub",

@@ -20,12 +20,12 @@ class DynamicDbCredentials:
 
 
 class VaultClient:
-    """Thin async Vault client for the JWT login + database creds flow.
+    """Thin async Vault client.
 
-    Authenticates to Vault with a JWT — SPIFFE JWT-SVID for workload
-    attestation, Keycloak OBO for human identity. Neither login token
-    can call secrets. Vault then mints a third action token (token role)
-    that is the only identity allowed to read database/creds or Transform.
+    Secrets (database/creds, Transform, lease revoke) are called with the
+    caller's Keycloak OBO/CIBA JWT as X-Vault-Token. Vault 2.1 OAuth
+    Resource Server validates RFC 9396 RAR inline. jwt-keycloak login is
+    still used to probe CIBA policy.
     """
 
     def __init__(
@@ -125,8 +125,8 @@ class VaultClient:
     ) -> bool:
         """True when ACL policy for this action requires CIBA for this human.
 
-        Probe path is ciba/<action>/<username>. Edit policy ciba-list-users
-        in the Vault UI: read = phone Approve, deny = silent OBO.
+        Probe path is ciba/<action>/<username>. Edit policy ciba-write
+        in the Vault UI: read = phone Approve on write, deny = silent OBO.
         """
         path = f"ciba/{action}/{user}"
         url = f"{self._addr}/v1/sys/capabilities-self"
@@ -381,6 +381,30 @@ class VaultClient:
             lease_id=body.get("lease_id", ""),
             lease_duration=int(body.get("lease_duration", 0) or 0),
         )
+
+    async def revoke_lease(self, client_token: str, lease_id: str) -> None:
+        if not lease_id:
+            return
+        url = f"{self._addr}/v1/sys/leases/revoke"
+        try:
+            async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
+                resp = await client.put(
+                    url,
+                    json={"lease_id": lease_id},
+                    headers=self._headers(client_token),
+                )
+        except httpx.HTTPError as exc:
+            raise AppError(
+                502,
+                "agent_error",
+                f"Vault lease revoke failed (transport): {exc}",
+            ) from exc
+        if resp.status_code >= 400:
+            raise AppError(
+                _vault_status_to_app_status(resp.status_code),
+                _vault_status_to_app_error(resp.status_code),
+                f"Vault lease revoke rejected (status={resp.status_code}): {_safe_error_body(resp)}",
+            )
 
 
 def _vault_status_to_app_status(status: int) -> int:

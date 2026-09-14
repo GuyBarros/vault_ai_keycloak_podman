@@ -82,6 +82,9 @@ async def exchange_obo_token(
             subject_token=body.subject_token,
             actor_token=body.actor_token,
             scope=body.scope,
+            authorization_details=body.authorization_details,
+            act=body.act,
+            child=body.child,
         )
         return OBOTokenResponse(
             access_token=result.access_token,

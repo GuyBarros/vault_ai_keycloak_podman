@@ -23,6 +23,8 @@ from logging_utils import (
 )
 from mcp_client import extract_required_scopes, fetch_mcp_tools
 from models import AgentTokensResponse, ChatRequest
+from delegate_tool import make_delegate_research_tool
+from lifecycle import assert_agent_enabled
 from opa_client import OpaClient
 from pii_masking import make_mask_pii_tool
 from scoped_tool import make_scoped_tool
@@ -313,6 +315,12 @@ def create_app(
             )
         bind_log_context(preferred_username=preferred_username)
 
+        if not request.app.state.settings.bypass_auth_token_exchange:
+            vault_token = _read_vault_token_for_transform(request.app.state.settings)
+            assert_agent_enabled(
+                request.app.state.settings.vault_addr, vault_token
+            )
+
         runtime = request.app.state.agent_runtime
         if runtime is None:
             scoped_tools = _wrap_mcp_tools_with_per_call_obo(
@@ -332,6 +340,15 @@ def create_app(
                 vault_role=request.app.state.settings.vault_transform_role,
             )
             tools = list(LOCAL_TOOLS) + scoped_tools + [mask_pii_tool]
+            if access_token and not request.app.state.settings.bypass_auth_token_exchange:
+                tools.append(
+                    make_delegate_research_tool(
+                        token_service=request.app.state.token_service,
+                        subject_token=access_token,
+                        request_id=request.state.request_id,
+                        user_mcp_url=request.app.state.settings.user_mcp_url,
+                    )
+                )
             runtime = _build_runtime_for_request(request.app.state.llm, tools, is_admin=is_admin)
 
         return await runtime.handle_request(
@@ -352,12 +369,18 @@ def create_app(
         actor_token = request.app.state.token_service.read_actor_token()
 
         if request.app.state.settings.bypass_auth_token_exchange:
-            return AgentTokensResponse(actor_token=actor_token, obo_token=None)
+            return AgentTokensResponse(
+                actor_token=actor_token, obo_token=None, child_obo_token=None
+            )
 
         access_token = extract_bearer_token(request)
         validate_access_token(access_token)
         obo_token = request.app.state.token_service.get_last_obo_token(access_token)
-        return AgentTokensResponse(actor_token=actor_token, obo_token=obo_token)
+        return AgentTokensResponse(
+            actor_token=actor_token,
+            obo_token=obo_token,
+            child_obo_token=request.app.state.token_service.last_child_obo_token,
+        )
 
     return app
 

@@ -62,7 +62,13 @@ class KeycloakTokenExchangeClient:
             )
 
     def exchange_obo_token(
-        self, subject_token: str, actor_token: str, scope: str
+        self,
+        subject_token: str,
+        actor_token: str,
+        scope: str,
+        authorization_details: str | None = None,
+        act: str | None = None,
+        child: bool = False,
     ) -> dict:
         """Exchange *subject_token* + *actor_token* for a Keycloak access token.
 
@@ -101,14 +107,22 @@ class KeycloakTokenExchangeClient:
         _ensure_token_not_expired("subject_token", subject_token)
         _ensure_token_not_expired("actor_token", actor_token)
 
-        payload = self._build_rfc8693_payload(subject_token, actor_token, scope)
+        payload = self._build_rfc8693_payload(
+            subject_token, actor_token, scope, authorization_details, act, child
+        )
 
         logger.debug(
             "keycloak_token_exchange_payload",
             payload={
                 k: (
                     v
-                    if k not in {"subject_token", "actor_token", "client_secret", "client_assertion"}
+                    if k not in {
+                        "subject_token",
+                        "actor_token",
+                        "client_secret",
+                        "client_assertion",
+                        "delegation_actor",
+                    }
                     else "<redacted>"
                 )
                 for k, v in payload.items()
@@ -173,7 +187,13 @@ class KeycloakTokenExchangeClient:
             ) from exc
 
     def _build_rfc8693_payload(
-        self, subject_token: str, actor_token: str, scope: str
+        self,
+        subject_token: str,
+        actor_token: str,
+        scope: str,
+        authorization_details: str | None = None,
+        act: str | None = None,
+        child: bool = False,
     ) -> dict:
         """Build the RFC 8693 form payload for Keycloak standard token exchange.
 
@@ -192,9 +212,23 @@ class KeycloakTokenExchangeClient:
             "client_id": self._client_id,
         }
 
+        from verify.rar import authorization_details_json
+
         scope_parts = {s for s in scope.split() if s}
         scope_parts.add("delegation:ai-agent")
         payload["scope"] = " ".join(sorted(scope_parts))
+        rar = (authorization_details or "").strip() or authorization_details_json(
+            " ".join(sorted(scope_parts))
+        )
+        if rar:
+            payload["authorization_details"] = rar
+
+        from verify.act import act_json
+
+        payload["delegation_actor"] = actor_token
+        payload["delegation_act"] = (act or "").strip() or act_json(
+            actor_token, child=child
+        )
 
         if self._client_auth_method == "client_assertion":
             payload["client_assertion_type"] = self._client_assertion_type

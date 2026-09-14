@@ -80,10 +80,35 @@ def make_scoped_tool(
                 obo_token=obo_token,
                 request_id=request_id,
             )
-        except AppError:
+        except AppError as exc:
             # invoke_mcp_tool surfaces ext_authz 403s as AppError(403, ...).
-            # Let it bubble up so the FastAPI handler can return 403 to the
-            # web-app with the upstream authz reason as the message.
+            # Convert to a ToolMessage so the model can report the deny, and
+            # count toward session revocation.
+            err_text = str(exc)
+            if exc.status_code in (401, 403) or "insufficient_scope" in err_text:
+                from deny_tracker import DENY_TRACKER
+                from security import decode_jwt_payload
+
+                subject = "unknown"
+                try:
+                    subject = str(
+                        decode_jwt_payload(subject_token, "subject").get(
+                            "preferred_username"
+                        )
+                        or "unknown"
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                count = DENY_TRACKER.record_deny(subject)
+                if DENY_TRACKER.should_revoke(subject):
+                    from session_kill import raise_session_revoked
+
+                    raise_session_revoked(subject)
+                return (
+                    f"Permission denied: tool {name} was rejected "
+                    f"({exc.message}). Unauthorized attempts this window: "
+                    f"{count}/3."
+                )
             raise
         except Exception as exc:  # noqa: BLE001 - surface broad MCP errors as ToolMessage
             err_text = str(exc)

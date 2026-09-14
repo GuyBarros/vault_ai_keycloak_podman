@@ -79,4 +79,25 @@ create_entry \
   -jwtSVIDTTL 300 \
   -x509SVIDTTL 3600
 
+echo "spire-setup: registering ai-agent-child workload entry (unix:uid:1001)..."
+
+# Re-runs must converge on uid 1001 even if an older uid:0 entry is persisted.
+ids=$($SPIRE_CLI entry show \
+  -spiffeID "spiffe://example.org/ai-agent-child" \
+  -socketPath "$SOCKET" 2>/dev/null \
+  | awk '/^Entry ID/ {print $NF}')
+for id in $ids; do
+  [ -z "$id" ] && continue
+  $SPIRE_CLI entry delete -entryID "$id" -socketPath "$SOCKET" >/dev/null \
+    && echo "spire-setup: deleted stale child entry $id"
+done
+
+create_entry \
+  -spiffeID "spiffe://example.org/ai-agent-child" \
+  -parentID "spiffe://example.org/agent/user-mcp" \
+  -selector "unix:uid:1001" \
+  -socketPath "$SOCKET" \
+  -jwtSVIDTTL 300 \
+  -x509SVIDTTL 3600
+
 echo "spire-setup: done."

@@ -64,6 +64,34 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
   return json;
 }
 
+export async function introspectAccessToken(accessToken: string): Promise<boolean> {
+  const body = new URLSearchParams({
+    token: accessToken,
+    client_id: config.KEYCLOAK_CLIENT_ID,
+    client_secret: config.KEYCLOAK_CLIENT_SECRET,
+  });
+  try {
+    const res = await fetch(oidc.introspectUrl, {
+      method: 'POST',
+      headers: buildOutboundHeaders({
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      }),
+      body,
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      log.warn({ status: res.status }, 'token introspection failed');
+      return true;
+    }
+    const json = (await res.json()) as { active?: boolean };
+    return json.active !== false;
+  } catch (err) {
+    log.warn({ err: String(err) }, 'token introspection error');
+    return true;
+  }
+}
+
 export function buildLogoutUrl(idToken: string): string {
   const params = new URLSearchParams({
     post_logout_redirect_uri: config.KEYCLOAK_LOGOUT_URI,

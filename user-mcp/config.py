@@ -107,14 +107,16 @@ class Settings(BaseSettings):
         default=10.0, alias="USER_MCP_VAULT_TIMEOUT_SECONDS"
     )
 
-    # Keycloak CIBA — list-users checks ACL policy ciba-list-users per actor
-    # (ciba/list-users/<username>). Write actions still use session OBO.
+    # Keycloak CIBA — writes check ACL policy ciba-write per actor
+    # (ciba/write/<username>). Reads stay silent OBO (ciba/list-users deny).
     ciba_keycloak_url: str = Field(
         default="http://keycloak:8080", alias="USER_MCP_CIBA_KEYCLOAK_URL"
     )
     ciba_realm: str = Field(default="demo", alias="USER_MCP_CIBA_REALM")
     ciba_client_id: str = Field(default="", alias="USER_MCP_CIBA_CLIENT_ID")
     ciba_client_secret: str = Field(default="", alias="USER_MCP_CIBA_CLIENT_SECRET")
+    # Fallback only; postgres_repo passes users.write for HITL writes and
+    # users.read if list-users is ever switched back to CIBA.
     ciba_scope: str = Field(default="openid users.read", alias="USER_MCP_CIBA_SCOPE")
     ciba_poll_timeout_seconds: float = Field(
         default=110.0, alias="USER_MCP_CIBA_POLL_TIMEOUT_SECONDS"

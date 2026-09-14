@@ -64,7 +64,13 @@ class OBOBroker:
         self._cache = cache or TokenCache()
 
     def exchange_obo_token(
-        self, subject_token: str, actor_token: str, scope: str
+        self,
+        subject_token: str,
+        actor_token: str,
+        scope: str,
+        authorization_details: str | None = None,
+        act: str | None = None,
+        child: bool = False,
     ) -> OBOTokenResult:
         """Return a Keycloak access token on behalf of *subject_token* (RFC 8693).
 
@@ -94,7 +100,9 @@ class OBOBroker:
         normalized_scope = _normalize_scope(scope)
         # Compose actor_token + normalized scope into the second cache slot so the
         # same subject+actor pair with different scopes never share a cache entry.
-        cache_slot = f"{actor_token}|{normalized_scope}"
+        rar_slot = authorization_details or ""
+        act_slot = act or ("child" if child else "parent")
+        cache_slot = f"{actor_token}|{normalized_scope}|{rar_slot}|{act_slot}"
 
         cached_token = self._cache.get(subject_token, cache_slot)
         if cached_token:
@@ -111,7 +119,12 @@ class OBOBroker:
             return OBOTokenResult(access_token=cached_token, cached=True)
 
         response_data = self._fetch_with_retry(
-            subject_token, actor_token, normalized_scope
+            subject_token,
+            actor_token,
+            normalized_scope,
+            authorization_details,
+            act,
+            child,
         )
         access_token: str = response_data["access_token"]
         self._cache.set(subject_token, cache_slot, access_token)
@@ -136,9 +149,22 @@ class OBOBroker:
         reraise=True,
     )
     def _fetch_with_retry(
-        self, subject_token: str, actor_token: str, scope: str
+        self,
+        subject_token: str,
+        actor_token: str,
+        scope: str,
+        authorization_details: str | None = None,
+        act: str | None = None,
+        child: bool = False,
     ) -> dict:
-        return self._client.exchange_obo_token(subject_token, actor_token, scope)
+        return self._client.exchange_obo_token(
+            subject_token,
+            actor_token,
+            scope,
+            authorization_details,
+            act=act,
+            child=child,
+        )
 
 
 def _normalize_scope(scope: str) -> str:

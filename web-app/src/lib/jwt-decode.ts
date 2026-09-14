@@ -28,7 +28,12 @@ export function formatClaimValue(value: unknown): string {
     }
     return String(value);
   }
-  if (Array.isArray(value)) return value.map((v) => String(v)).join(', ');
+  if (Array.isArray(value)) {
+    if (value.some((v) => v !== null && typeof v === 'object')) {
+      return JSON.stringify(value);
+    }
+    return value.map((v) => String(v)).join(', ');
+  }
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }

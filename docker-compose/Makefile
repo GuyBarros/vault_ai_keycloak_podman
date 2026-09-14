@@ -62,7 +62,9 @@ help:
 	@echo "  make build       Build local images for DOCKER_PLATFORM"
 	@echo "  make clear       Stop stack and delete volumes"
 	@echo "  make prove-obo-vault  Prove jwt-keycloak bound_claims (stack must be up)"
-	@echo "  make prove-ciba-vault Prove CIBA step-up on oidc-read (stack must be up)"
+	@echo "  make prove-ciba-vault Prove CIBA HITL on writes; list stays silent OBO"
+	@echo "  make prove-rar          Mint a Keycloak RAR token and hit Vault with it"
+	@echo "  make prove-video        Video-beat evidence (OBO, RAR, CIBA, sandbox, suspend)"
 	@echo "  make demo-status      One-shot checklist (web, vault, CIBA, phone)"
 	@echo "  make demo-status-watch  Same, refresh every 2s"
 
@@ -100,6 +102,17 @@ prove-ciba-vault:
 	chmod +x ./prove-ciba-vault.sh
 	./prove-ciba-vault.sh
 
+prove-rar:
+	chmod +x ./prove-rar.sh
+	./prove-rar.sh
+
+prove-obo-vault:
+	chmod +x ./prove-obo-vault-bound-claims.sh
+	./prove-obo-vault-bound-claims.sh
+
+prove-video:
+	python3 ./prove-video-beats.py
+
 demo-status:
 	chmod +x ./demo-status.sh
 	./demo-status.sh
@@ -108,4 +121,4 @@ demo-status-watch:
 	chmod +x ./demo-status.sh
 	./demo-status.sh --watch
 
-.PHONY: all help check-env clear build prove-obo-vault prove-ciba-vault demo-status demo-status-watch
+.PHONY: all help check-env clear build prove-obo-vault prove-ciba-vault prove-rar prove-video demo-status demo-status-watch
