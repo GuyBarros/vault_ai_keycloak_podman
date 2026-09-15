@@ -30,6 +30,7 @@ class Settings:
     vault_token_path: Path
     opa_url: str
     vault_addr: str
+    child_runtime_url: str
 
 
 def load_settings() -> Settings:
@@ -64,6 +65,9 @@ def load_settings() -> Settings:
         ),
         opa_url=os.getenv("OPA_URL", "").rstrip("/"),
         vault_addr=os.getenv("VAULT_ADDR", "http://vault:8200").rstrip("/"),
+        child_runtime_url=os.getenv(
+            "CHILD_RUNTIME_URL", "http://ai-agent-child:8001"
+        ).rstrip("/"),
     )
     configure_logging(settings.log_level)
     serialized_settings = asdict(settings)

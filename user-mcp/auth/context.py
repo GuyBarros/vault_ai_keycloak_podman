@@ -31,6 +31,11 @@ current_obo_token: ContextVar[Optional[str]] = ContextVar(
     "current_obo_token", default=None
 )
 
+# RFC 9396 authorization_details from the validated OBO (action + resource).
+current_obo_authorization_details: ContextVar[tuple] = ContextVar(
+    "current_obo_authorization_details", default=()
+)
+
 # Vault-issued combined action token (human + user-mcp). Secret calls
 # (database/creds, transform) must use this token, never the SPIFFE or
 # jwt-keycloak login tokens.
@@ -45,19 +50,22 @@ def bind_request_identity(
     user: str | None = None,
     groups: tuple[str, ...] | None = None,
     token: str | None = None,
-) -> tuple[Token[Any], Token[Any], Token[Any], Token[Any]]:
+    authorization_details: list | None = None,
+) -> tuple[Token[Any], Token[Any], Token[Any], Token[Any], Token[Any]]:
     return (
         current_obo_scope.set(scope),
         current_obo_user.set(user),
         current_obo_groups.set(groups or ()),
         current_obo_token.set(token),
+        current_obo_authorization_details.set(tuple(authorization_details or [])),
     )
 
 
 def reset_request_identity(
-    tokens: tuple[Token[Any], Token[Any], Token[Any], Token[Any]],
+    tokens: tuple[Token[Any], Token[Any], Token[Any], Token[Any], Token[Any]],
 ) -> None:
-    scope_token, user_token, groups_token, obo_token = tokens
+    scope_token, user_token, groups_token, obo_token, rar_token = tokens
+    current_obo_authorization_details.reset(rar_token)
     current_obo_token.reset(obo_token)
     current_obo_groups.reset(groups_token)
     current_obo_user.reset(user_token)

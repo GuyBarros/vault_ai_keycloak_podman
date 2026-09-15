@@ -122,4 +122,44 @@ if [ "${CODE}" = "200" ]; then
 fi
 
 echo
+echo "== mint with allowed_parameters — Vault gates the resource on the lease =="
+AUTHZ_OP='[{"type":"vault:path_access","path":"database/creds/user-mcp-write-role","capabilities":["read"],"operationDetails":{"action":"create_user","email":"alice@demo.com"},"allowed_parameters":{"email":["alice@demo.com"]},"required_parameters":["email"]}]'
+ADMIN_OP_RESP=$(mint admin admin "openid users.write" --data-urlencode "authorization_details=${AUTHZ_OP}")
+ADMIN_OP_JWT=$(printf '%s' "${ADMIN_OP_RESP}" | json_field access_token)
+python3 - "${ADMIN_OP_JWT}" <<'PY'
+import json, sys, base64
+jwt = sys.argv[1]
+payload = jwt.split(".")[1]
+pad = "=" * (-len(payload) % 4)
+p = json.loads(base64.urlsafe_b64decode(payload + pad))
+details = p.get("authorization_details") or []
+first = details[0] or {}
+op = first.get("operationDetails") or {}
+assert op.get("action") == "create_user", op
+assert op.get("email") == "alice@demo.com", op
+assert first.get("allowed_parameters", {}).get("email") == ["alice@demo.com"], first
+assert "email" in (first.get("required_parameters") or []), first
+print("ok: allowed_parameters + operationDetails survived Keycloak mapper")
+PY
+CODE=$(vault_get "${ADMIN_OP_JWT}" "${WRITE_PATH}")
+echo "write-role GET without email HTTP ${CODE} (want deny if required_parameters bind)"
+CODE_OK=$(curl -sS -o /tmp/vault-rar-body.json -w "%{http_code}" \
+  -H "X-Vault-Token: ${ADMIN_OP_JWT}" \
+  "${VAULT_ADDR}/v1/${WRITE_PATH}?email=alice@demo.com")
+echo "write-role GET email=alice HTTP ${CODE_OK}"
+CODE_BAD=$(curl -sS -o /tmp/vault-rar-poison.json -w "%{http_code}" \
+  -H "X-Vault-Token: ${ADMIN_OP_JWT}" \
+  "${VAULT_ADDR}/v1/${WRITE_PATH}?email=bob@demo.com")
+echo "write-role GET email=bob HTTP ${CODE_BAD} (poisoned ticket)"
+if [ "${CODE_OK}" != "200" ]; then
+  python3 -m json.tool /tmp/vault-rar-body.json | head -40
+  echo "FAIL: Vault must mint write-role when request email matches RAR" >&2
+  exit 1
+fi
+if [ "${CODE_BAD}" = "200" ]; then
+  echo "FAIL: Vault must deny write-role when request email is not in RAR" >&2
+  exit 1
+fi
+
+echo
 echo "PASS: Keycloak OIDC RAR tokens are accepted and enforced by Vault OAuth Resource Server"

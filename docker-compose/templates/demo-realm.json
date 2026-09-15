@@ -3,6 +3,7 @@
   "enabled": true,
   "attributes": {
     "ssf.transmitterEnabled": "true",
+    "ssf.defaultSubjects": "ALL",
     "token-exchange": "true",
     "cibaBackchannelTokenDeliveryMode": "poll",
     "cibaExpiresIn": "120",
@@ -61,7 +62,14 @@
         "post.logout.redirect.uris": "http://localhost:8080/",
         "token.exchange.grant.enabled": "true",
         "backchannel.logout.url": "http://web:8080/api/auth/backchannel-logout",
-        "backchannel.logout.session.required": "true"
+        "backchannel.logout.session.required": "true",
+        "ssf.enabled": "true",
+        "ssf.profile": "SSF_1_0",
+        "ssf.defaultSubjects": "ALL",
+        "ssf.validPushUrls": "http://web:8080/api/auth/ssf##http://web:8080/api/auth/ssf/",
+        "ssf.allowEmitEvents": "true",
+        "ssf.supportedEvents": "https://schemas.openid.net/secevent/caep/event-type/session-revoked",
+        "ssf.allowedDeliveryMethods": "push"
       },
       "protocolMappers": [
         {

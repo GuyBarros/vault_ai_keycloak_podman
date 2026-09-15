@@ -83,7 +83,7 @@ Returns `{actor_token, obo_token, child_obo_token}`. The upstream payload is unw
 |---|---|---|
 | Subject | `/api/auth/claims` (session cookie) | Access/id claims. `may_act.sub` = `spiffe://example.org/ai-agent`. |
 | Actor | `actor_token` | Vault Identity OIDC (`agent_id`, entity `sub`). |
-| OBO | `obo_token` | RFC 8693 + RAR. `act.sub` SPIFFE parent. `authorization_details` as JSON. |
+| OBO | `obo_token` | RFC 8693 + RAR. `act.sub` SPIFFE parent. `authorization_details` path + `operationDetails.action` / `email`. |
 | Child OBO | `child_obo_token` | Present after *delegate*. `act.sub` child SPIFFE, nested `act.act` parent. Empty until then. |
 
 After each successful chat send, the React `TokenInspector` increments a refresh key and re-fetches `/api/agent/tokens`. JWT payloads are decoded **client-side** (no signature verification — these are display-only) via `decodeJwtPayload()` in `lib/jwt-decode.ts`. Nested objects (`act`, `authorization_details`) are `JSON.stringify`'d so they do not render as `[object Object]`.

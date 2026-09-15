@@ -40,7 +40,11 @@ class CibaClient:
         self._approve_url = approve_url
 
     async def fetch_access_token(
-        self, login_hint: str, binding_message: str, scope: str | None = None
+        self,
+        login_hint: str,
+        binding_message: str,
+        scope: str | None = None,
+        authorization_details: str | None = None,
     ) -> str:
         if not self._client_id or not self._client_secret:
             raise AppError(
@@ -59,6 +63,11 @@ class CibaClient:
                     "login_hint": login_hint,
                     "scope": scope or self._scope,
                     "binding_message": _binding_message(binding_message),
+                    **(
+                        {"authorization_details": authorization_details}
+                        if authorization_details
+                        else {}
+                    ),
                 },
             )
             body = _json(start)
@@ -141,7 +150,7 @@ class CibaClient:
 
 def _binding_message(text: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in text)
-    cleaned = cleaned.strip("-")[:50]
+    cleaned = cleaned.strip("-")[:80]
     return cleaned or "write"
 
 

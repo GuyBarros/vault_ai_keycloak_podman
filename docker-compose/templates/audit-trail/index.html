@@ -151,8 +151,8 @@
       <p>
         Each request starts with what the user received from the agent (the listing,
         the denial, the created user). Then the trail walks back through Vault —
-        including CIBA phone approval when policy <code>ciba-write</code>
-        requires it for that actor on a write —
+        including CIBA phone approval when policy requires it for that
+        action and actor (create/delete, or a sensitive email) —
         to the human who asked.
       </p>
     </div>
@@ -176,7 +176,7 @@
       <article class="id-card ciba">
         <div class="k">Step-up — CIBA</div>
         <h2>Vault refuses silent OBO writes</h2>
-        <p>ACL policy <code>ciba-write</code> is the write action. <code>read</code> on <code>ciba/write/admin</code> or <code>…/user</code> requires phone Approve; list/search stay silent OBO.</p>
+        <p>ACL <code>ciba-write</code> is per tool. <code>read</code> on <code>ciba/create_user/admin</code> requires phone Approve; <code>update_user_by_email</code> stays silent unless the email is sensitive (<code>ciba/sensitive/…</code>). List/search stay silent OBO.</p>
       </article>
       <article class="id-card human">
         <div class="k">Actor — human</div>
@@ -478,10 +478,14 @@
       if (ev.workload_spiffe_id) bits.push("spiffe=" + ev.workload_spiffe_id);
       if (ev.control_group) bits.push("cg=" + ev.control_group);
       if (ev.display_name) bits.push("display=" + ev.display_name);
-      if (ev.jwt_grant) bits.push("grant=" + ev.jwt_grant);
+      if (ev.grant_id) bits.push("grant_id=" + ev.grant_id);
+      if (ev.transaction_id) bits.push("txn=" + ev.transaction_id);
+      if (ev.request_id && !ev.transaction_id) bits.push("txn=" + ev.request_id);
+      if (ev.jwt_grant) bits.push("jwt_grant=" + ev.jwt_grant);
       if (ev.ciba_action) bits.push("action=" + ev.ciba_action);
       if (ev.binding_message) bits.push("binding=" + ev.binding_message);
       if (ev.login_hint) bits.push("hint=" + ev.login_hint);
+      if (ev.lease_id) bits.push("lease=" + ev.lease_id);
       return bits.join("  ");
     }
 

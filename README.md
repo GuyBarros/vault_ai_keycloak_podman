@@ -108,12 +108,13 @@ On `feat/agentic-ai-patterns` the stack is **Vault Enterprise 2.1** as an OAuth 
 | Video beat | What to do here |
 |---|---|
 | Silent read (Jira) | Chat: `list users`. OBO `users.read`. CIBA at [localhost:8093](http://localhost:8093) stays Waiting. |
-| Write + HITL (refund) | Chat: `create a user`. Approve on :8093. Then Vault write-role + DB lease. |
+| Write + HITL (refund) | Chat: `create a user`. Approve on :8093. Then Vault write-role + DB lease. `update` a normal email is silent; `admin@demo.com` is the sensitive record and waits for Approve. |
 | RFC 8693 `act` | Inspector: subject `may_act.sub` and OBO `act.sub` are both `spiffe://example.org/ai-agent`. `preferred_username` stays `ai-agent`. |
-| Child sandbox | Chat: `delegate`. Child OBO `act.sub=spiffe://example.org/ai-agent-child` (nested `act.act` = parent). List works; create is `access_denied`. Sidecar `vault-agent-child` is uid **1001**; parent uid 0 cannot fetch that SVID. |
-| 3 unauthorized → session dead | Three denied writes in five minutes. Keycloak Admin logout + token introspection + OIDC backchannel. Chat returns `401 session_revoked`. |
-| Owner suspends agent | `vault kv put agent-lifecycle/ai-agent enabled=false` → HTTP 403 `agent_suspended` until re-enabled. |
-| Agent registry | `vault list agent-registry/registration/display-name` (the mount root is empty by design). |
+| Action + resource (poisoned ticket) | Each tool call mints RAR `allowed_parameters` + `operationDetails` for the email/`first_name`. Vault denies a lease whose request email is not in the grant. MCP also refuses a poisoned ticket. |
+| Child sandbox | Chat: `delegate`. Runtime is `ai-agent-child` (uid **1001**, port 8001). Child OBO `act.sub=spiffe://example.org/ai-agent-child`. List works; create is `access_denied`. Parent does not mount the child SVID. |
+| 3 unauthorized → session dead | Three denied writes in five minutes. Keycloak Admin logout + CAEP `session-revoked` on the SSF stream to [localhost:8080/api/auth/ssf](http://localhost:8080/api/auth/ssf) + backchannel. Chat returns `401 session_revoked`. |
+| Owner suspends / onboard | Registry `owner=admin`. `vault kv put agent-lifecycle/ai-agent enabled=false` → 403 `agent_suspended`. Missing registry/KV → 403 `agent_not_onboarded`. |
+| Agent registry | `vault list agent-registry/registration/display-name` (the mount root is empty by design). Each record has `owner`. |
 
 After `make`:
 
@@ -121,7 +122,7 @@ After `make`:
 make prove-rar           # Keycloak RAR token accepted/denied by Vault
 make prove-ciba-vault    # HITL on write; list stays silent OBO
 make prove-obo-vault     # jwt-keycloak bound claims
-make prove-video         # 14 video beats (OBO, RAR, CIBA, sandbox, kill, suspend)
+make prove-video         # 15 video beats (OBO, RAR, CIBA, sandbox, SSF, kill, suspend)
 ```
 
-The LLM for the child still runs in the parent process (`delegate_research`); only the workload identity is sandboxed. Keycloak `--features=ssf` is in compose for the next recreate; live kill is Admin logout + introspection + backchannel.
+The LLM for the child runs in `ai-agent-child` (uid 1001). Shared Signals: Keycloak SSF transmitter PUSH to the web RP (`/api/auth/ssf`).

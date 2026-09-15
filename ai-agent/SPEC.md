@@ -82,11 +82,19 @@ Recommended configuration:
 - `ACTOR_TOKEN_PATH=/vault/secrets/actor-token`
 - `CHILD_ACTOR_TOKEN_PATH=/vault/child-secrets/child-actor-token`
 
-`GET /v1/agent/tokens` returns `{actor_token, obo_token, child_obo_token}`. `child_obo_token` is set after `delegate_research` mints a read-only OBO (`act.sub` = `spiffe://example.org/ai-agent-child`, nested `act.act` = parent SPIFFE). The LLM still runs in the parent process; only the workload identity is sandboxed.
+`GET /v1/agent/tokens` returns `{actor_token, obo_token, child_obo_token}`. `child_obo_token` is set after `delegate_research` HTTP-calls the `ai-agent-child` runtime (`act.sub` = `spiffe://example.org/ai-agent-child`, nested `act.act` = parent SPIFFE). The child LLM and MCP calls run in that process (uid 1001); the parent never mounts the child SVID.
 
 ### CIBA and writes
 
-CIBA is enforced in **user-mcp**, not in the agent. Reads (`users.read`) stay silent OBO. Writes (`users.write`) require Keycloak CIBA (`ciba/write/<user>` ACL = read). Three tool denies in five minutes (`deny_tracker.py`) call Keycloak Admin logout and raise `session_revoked`.
+CIBA is enforced in **user-mcp**, not in the agent. HITL is a Vault ACL
+outcome on `ciba/<tool>/<user>`: `create_user` and `delete_user_by_email`
+are `read` (phone Approve); `list_all_users`, `search_users_by_first_name`,
+and `update_user_by_email` are `deny` (silent OBO). Emails in
+`{admin@demo.com}` or local-part `patient`/`sensitive` also probe
+`ciba/sensitive/<user>` (OpenShell patient-record analogue). After Approve,
+the DB lease is minted with the action-bound OBO JWT, not the CIBA token.
+Three tool denies in five minutes (`deny_tracker.py`) call Keycloak Admin
+logout and raise `session_revoked`.
 
 ### Vault Behavior
 
@@ -167,7 +175,8 @@ Example:
 | cache_error | cache corruption |
 | agent_error | agent execution failure |
 | agent_suspended | KV `agent-lifecycle/<id> enabled=false` |
-| session_revoked | DenyTracker: 3 denies in 5 min; IdP session ended |
+| agent_not_onboarded | Missing registry owner or lifecycle KV |
+| session_revoked | DenyTracker: 3 denies in 5 min; IdP session ended + CAEP SSF |
 
 ## Logging Requirements
 
@@ -218,7 +227,7 @@ The runtime must also log that the actor token file path was used, that the OBO 
 3. Prepare LangChain messages and tools (including `delegate_research`).
 4. Read parent `actor_token` from `ACTOR_TOKEN_PATH`.
 5. Check the in-memory OBO cache (key includes subject + actor + scope + RAR) and reuse a valid token when available.
-6. If no valid cached token exists, call the token-exchange service (`delegation_act` = SPIFFE, `authorization_details` = `vault:path_access`).
+6. If no valid cached token exists, call the token-exchange service (`delegation_act` = SPIFFE, `authorization_details` = `vault:path_access` + `operationDetails` for the tool and resource).
 7. On write tools, user-mcp runs CIBA; the agent waits on the MCP call.
 8. On child delegate, read `CHILD_ACTOR_TOKEN_PATH` and mint a nested OBO (`users.read` only).
 9. Three denies in five minutes: Keycloak Admin logout + `session_revoked`.

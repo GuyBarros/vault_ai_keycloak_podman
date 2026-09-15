@@ -107,8 +107,8 @@ class Settings(BaseSettings):
         default=10.0, alias="USER_MCP_VAULT_TIMEOUT_SECONDS"
     )
 
-    # Keycloak CIBA — writes check ACL policy ciba-write per actor
-    # (ciba/write/<username>). Reads stay silent OBO (ciba/list-users deny).
+    # Keycloak CIBA — HITL is ACL ciba/<tool>/<username> (create/delete =
+    # read; update deny unless ciba/sensitive). Reads stay silent OBO.
     ciba_keycloak_url: str = Field(
         default="http://keycloak:8080", alias="USER_MCP_CIBA_KEYCLOAK_URL"
     )

@@ -123,6 +123,19 @@ def json_get(url: str, headers: dict[str, str] | None = None) -> tuple[int, dict
     return status, parsed
 
 
+def keycloak_admin_token() -> str:
+    _, body = form(
+        f"{KC_URL}/realms/master/protocol/openid-connect/token",
+        {
+            "client_id": "admin-cli",
+            "username": "admin",
+            "password": "admin",
+            "grant_type": "password",
+        },
+    )
+    return str(body.get("access_token") or "")
+
+
 def docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["docker", *args],
@@ -246,7 +259,13 @@ def main() -> int:
         check=False,
     )
     try:
-        listed_keys = json.loads(listed_proc.stdout or "{}").get("data", {}).get("keys") or []
+        raw = json.loads(listed_proc.stdout or "[]")
+        if isinstance(raw, list):
+            listed_keys = [str(k) for k in raw]
+        elif isinstance(raw, dict):
+            listed_keys = (raw.get("data") or {}).get("keys") or []
+        else:
+            listed_keys = []
     except Exception:
         listed_keys = []
     present = []
@@ -267,12 +286,38 @@ def main() -> int:
         if proc.returncode == 0:
             present.append(name)
     want = ["ai-agent", "ai-agent-child", "demo-admin", "demo-user"]
+    owners = {}
+    for name in want:
+        proc = docker(
+            "exec",
+            "-e",
+            "VAULT_ADDR=http://127.0.0.1:8200",
+            "-e",
+            "VAULT_TOKEN=root",
+            "vault",
+            "vault",
+            "read",
+            "-format=json",
+            f"agent-registry/registration/display-name/{name}",
+            check=False,
+        )
+        try:
+            owners[name] = (json.loads(proc.stdout or "{}").get("data") or {}).get("owner")
+        except Exception:
+            owners[name] = None
+    owner_ok = owners.get("ai-agent") == "admin" and owners.get("ai-agent-child") == "admin"
     record(
         "agent_registry",
         "PASS"
-        if sorted(listed_keys) == want and present == ["demo-user", "demo-admin", "ai-agent", "ai-agent-child"]
+        if sorted(listed_keys) == want
+        and present == ["demo-user", "demo-admin", "ai-agent", "ai-agent-child"]
+        and owner_ok
         else "FAIL",
-        {"list_display_name": listed_keys, "identity_entities": present},
+        {
+            "list_display_name": listed_keys,
+            "identity_entities": present,
+            "owners": owners,
+        },
     )
 
     # 4. Agent identity (SPIFFE actor JWT)
@@ -294,6 +339,29 @@ def main() -> int:
         "PASS" if st == 200 and issuer and "realms/demo" in str(issuer) else "FAIL",
         {"http": st, "issuer": issuer},
     )
+    st_ssf, ssf = json_get(f"{KC_URL}/realms/{REALM}/.well-known/ssf-configuration")
+    admin = keycloak_admin_token()
+    st_stream, stream = json_get(
+        f"{KC_URL}/admin/realms/{REALM}/ssf/clients/web/stream",
+        headers={"Authorization": f"Bearer {admin}"} if admin else None,
+    )
+    record(
+        "ssf_transmitter",
+        "PASS"
+        if st_ssf == 200
+        and (ssf.get("issuer") or ssf.get("spec_version"))
+        and st_stream == 200
+        and (stream.get("status") == "enabled" or stream.get("streamId"))
+        else "FAIL",
+        {
+            "http": st_ssf,
+            "keys": sorted(ssf.keys()) if isinstance(ssf, dict) else [],
+            "stream_http": st_stream,
+            "stream_id": stream.get("streamId"),
+            "stream_status": stream.get("status"),
+            "push": (stream.get("delivery") or {}).get("endpoint_url"),
+        },
+    )
 
     # 6–7. RFC 8693 OBO + RAR on exchanged token
     subject = mint_password(
@@ -309,12 +377,39 @@ def main() -> int:
             "subject_token": subject,
             "actor_token": actor,
             "scope": "users.read",
+            "authorization_details": json.dumps(
+                [
+                    {
+                        "type": "vault:path_access",
+                        "path": "database/creds/user-mcp-read-role",
+                        "capabilities": ["read"],
+                        "operationDetails": {"action": "list_all_users"},
+                    },
+                    {
+                        "type": "vault:path_access",
+                        "path": "transform/encode/user-mcp-transform",
+                        "capabilities": ["create", "update"],
+                    },
+                    {
+                        "type": "vault:path_access",
+                        "path": "sys/leases/revoke",
+                        "capabilities": ["update"],
+                    },
+                ],
+                separators=(",", ":"),
+            ),
         },
     )
     obo = str(obo_body.get("access_token") or "")
     obo_p = jwt_claims(obo)["payload"] if obo else {}
     rar = obo_p.get("authorization_details") or []
     has_rar = isinstance(rar, list) and any(x.get("type") == "vault:path_access" for x in rar if isinstance(x, dict))
+    has_op = any(
+        isinstance(x, dict)
+        and (x.get("operationDetails") or {}).get("action") == "list_all_users"
+        for x in rar
+        if isinstance(x, dict)
+    )
     act = obo_p.get("act") if isinstance(obo_p.get("act"), dict) else {}
     has_act = str(act.get("sub") or "") == "spiffe://example.org/ai-agent"
     may_act = obo_p.get("may_act") if isinstance(obo_p.get("may_act"), dict) else {}
@@ -329,11 +424,21 @@ def main() -> int:
         f"{VAULT}/v1/database/creds/user-mcp-write-role",
         headers=vault_headers(obo),
     ) if obo else (0, {})
+    granted_list = mcp_tool(obo, "list_all_users", {}) if obo else {"ok": False}
+    poisoned = mcp_tool(obo, "search_users_by_first_name", {"first_name": "Alice"}) if obo else {"ok": True}
+
+    def _mcp_denied(resp: dict[str, Any]) -> bool:
+        blob = json.dumps(resp).lower()
+        return (not resp.get("ok")) or "not authorized" in blob or "insufficient" in blob
+
+    has_poisoned_deny = bool(granted_list.get("ok")) and _mcp_denied(poisoned)
     record(
         "rfc8693_obo_rar",
         "PASS"
         if st == 200
         and has_rar
+        and has_op
+        and has_poisoned_deny
         and has_act
         and has_may_act_spiffe
         and st_obo_r == 200
@@ -344,6 +449,10 @@ def main() -> int:
         {
             "http": st,
             "has_authorization_details": has_rar,
+            "has_operation_details": has_op,
+            "list_ok": granted_list.get("ok"),
+            "poisoned_search_denied": not bool(poisoned.get("ok")),
+            "poisoned_message": str(poisoned.get("message") or "")[:240],
             "has_act": has_act,
             "may_act_sub": may_act.get("sub"),
             "vault_read_http": st_obo_r,
@@ -424,6 +533,10 @@ def main() -> int:
     child_user = docker(
         "inspect", "-f", "{{.Config.User}}", "vault-agent-child", check=False
     ).stdout.strip()
+    child_runtime_user = docker(
+        "inspect", "-f", "{{.Config.User}}", "ai-agent-child", check=False
+    ).stdout.strip()
+    st_child_health, child_health = json_get("http://localhost:8001/health")
     st_child_r, child_r = json_get(
         f"{VAULT}/v1/database/creds/user-mcp-read-role",
         headers=vault_headers(child),
@@ -462,6 +575,8 @@ def main() -> int:
         and spire_child
         and spire_child_uid
         and child_user == "1001:1001"
+        and child_runtime_user == "1001:1001"
+        and child_health.get("agent_id") == "ai-agent-child"
         and child_svid_ok
         else "FAIL",
         {
@@ -479,6 +594,8 @@ def main() -> int:
             "spire_child_entry": spire_child,
             "spire_child_uid": "unix:uid:1001" if spire_child_uid else child_block[:200],
             "child_container_user": child_user,
+            "child_runtime_user": child_runtime_user,
+            "child_runtime_health": child_health,
             "child_actor_agent_id": child_actor_p.get("agent_id"),
             "vault_read_http": st_child_r,
             "vault_write_http": st_child_w,

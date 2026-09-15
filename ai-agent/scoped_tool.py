@@ -26,11 +26,13 @@ def make_scoped_tool(
     The agent's request handler binds wrappers (not raw MCP tools) to the LLM,
     so when the LLM picks a tool the per-call coroutine:
       1. Looks up the tool's declared `required_scopes` (closed over).
-      2. Asks the OboTokenService for a token carrying exactly those scopes
-         on behalf of `subject_token` (cached by scope set).
-      3. Builds a transient MCP client with that OBO and calls the upstream
+      2. Builds RFC 9396 authorization_details for this tool + args
+         (Vault path + operationDetails.action/email).
+      3. Asks the OboTokenService for a token carrying exactly those scopes
+         on behalf of `subject_token` (cached by scope + RAR).
+      4. Builds a transient MCP client with that OBO and calls the upstream
          tool with the LLM's args.
-      4. On token-exchange failure or `insufficient_scope` from the MCP server,
+      5. On token-exchange failure or `insufficient_scope` from the MCP server,
          returns a human-readable string. LangChain forwards that as a
          ToolMessage so the LLM can apologize / suggest alternatives.
     """
@@ -40,11 +42,14 @@ def make_scoped_tool(
     scopes_label = sorted(required_scopes)
 
     async def _coroutine(**kwargs: Any) -> Any:
+        from rar import authorization_details_json_for_tool
+
         try:
             obo_token = token_service.resolve_token(
                 subject_token=subject_token,
                 request_id=request_id,
                 scopes=required_scopes,
+                authorization_details=authorization_details_json_for_tool(name, dict(kwargs)),
             )
         except AppError as exc:
             log_event(

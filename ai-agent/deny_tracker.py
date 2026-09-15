@@ -11,8 +11,8 @@ class DenyTracker:
     """Count consecutive unauthorized tool outcomes per human subject.
 
     Three denies inside five minutes raise session_revoked. Keycloak ends the
-    SSO session (Admin logout); OIDC backchannel + token introspection drop
-    the RP cookies — same functional beat as CAEP session-revoked.
+    SSO session (Admin logout) and emits CAEP session-revoked on the SSF
+    stream to the web RP.
     """
 
     def __init__(self, limit: int = _DENY_LIMIT, window_seconds: int = _WINDOW_SECONDS):

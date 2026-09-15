@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prove OpenShell-style CIBA: list-users silent (deny), writes HITL (read).
+# Prove OpenShell-style CIBA: list silent, create HITL, update silent unless sensitive.
 set -eu
 
 KC_URL="${KC_URL:-http://localhost:8081}"
@@ -143,10 +143,64 @@ caps = data.get(path) or data.get("capabilities") or []
 print("read" if ("read" in caps and "deny" not in caps) else "deny")
 ')
 if [ "${WRITE_SWITCH}" = "read" ]; then
-  echo "PASS  ciba/write/admin is read (CIBA on for writes)"
+  echo "PASS  ciba/write/admin is read (compat alias for HITL)"
   pass=$((pass + 1))
 else
   echo "FAIL  ciba/write/admin (got ${WRITE_SWITCH}, want read)"
+  fail=$((fail + 1))
+fi
+
+vault_ciba_write_path() {
+  _path=$1
+  docker exec -e V_JWT="${ADMIN_WRITE}" -e V_USER=admin -e V_PATH="${_path}" user-mcp \
+    /app/.venv/bin/python -c '
+import json, os, urllib.request
+login = json.dumps({"role": "user-mcp-oidc-write", "jwt": os.environ["V_JWT"]}).encode()
+req = urllib.request.Request(
+    "http://vault:8200/v1/auth/jwt-keycloak/login",
+    data=login,
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+with urllib.request.urlopen(req, timeout=10) as resp:
+    token = json.loads(resp.read())["auth"]["client_token"]
+path = os.environ["V_PATH"] + "/" + os.environ["V_USER"]
+payload = json.dumps({"paths": [path]}).encode()
+cap = urllib.request.Request(
+    "http://vault:8200/v1/sys/capabilities-self",
+    data=payload,
+    headers={"Content-Type": "application/json", "X-Vault-Token": token},
+    method="POST",
+)
+with urllib.request.urlopen(cap, timeout=10) as resp:
+    data = json.loads(resp.read()).get("data") or {}
+caps = data.get(path) or data.get("capabilities") or []
+print("read" if ("read" in caps and "deny" not in caps) else "deny")
+'
+}
+
+CREATE_SWITCH=$(vault_ciba_write_path ciba/create_user)
+if [ "${CREATE_SWITCH}" = "read" ]; then
+  echo "PASS  ciba/create_user/admin is read (HITL on create)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  ciba/create_user/admin (got ${CREATE_SWITCH}, want read)"
+  fail=$((fail + 1))
+fi
+UPDATE_SWITCH=$(vault_ciba_write_path ciba/update_user_by_email)
+if [ "${UPDATE_SWITCH}" = "deny" ]; then
+  echo "PASS  ciba/update_user_by_email/admin is deny (silent update)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  ciba/update_user_by_email/admin (got ${UPDATE_SWITCH}, want deny)"
+  fail=$((fail + 1))
+fi
+SENSITIVE_SWITCH=$(vault_ciba_write_path ciba/sensitive)
+if [ "${SENSITIVE_SWITCH}" = "read" ]; then
+  echo "PASS  ciba/sensitive/admin is read (HITL on patient-record analogue)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  ciba/sensitive/admin (got ${SENSITIVE_SWITCH}, want read)"
   fail=$((fail + 1))
 fi
 
