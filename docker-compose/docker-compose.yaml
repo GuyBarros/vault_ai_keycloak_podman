@@ -695,7 +695,14 @@ networks:
         # jwt-keycloak / user-mcp SPIFFE tokens to be used only from that
         # workload — a stolen OBO JWT presented on localhost:8200 cannot
         # mint database/creds.
+        #
+        # ip_range confines Docker's *automatic* address assignment to
+        # 172.28.1.0/24, leaving the 172.28.0.x block free for the static
+        # .20 reservation above — otherwise a container with no pinned IP
+        # (e.g. token-exchange, which starts before user-mcp) can race for
+        # and grab .20 before user-mcp requests it, breaking `make all`.
         - subnet: 172.28.0.0/16
+          ip_range: 172.28.1.0/24
 
 volumes:
   spire-data:

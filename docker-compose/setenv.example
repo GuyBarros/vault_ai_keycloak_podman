@@ -6,6 +6,7 @@ export GENERIC_CLIENT_ID=
 export GENERIC_CLIENT_SECRET=
 export KEYCLOAK_CLIENT_SECRET=
 export CUSTOMER_NAME=
+export ANTHROPIC_API_KEY=
 
 # CPU architecture for every container and for SPIRE binaries downloaded at boot.
 #   arm    — Apple Silicon (M1/M2/M3/M4) and ARM servers  → linux/arm64

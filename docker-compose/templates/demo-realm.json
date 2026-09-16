@@ -71,10 +71,10 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "token-exchange",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
             "introspection.token.claim": "true",
-            "add.to.lightweight.access.token": "true"
+            "lightweight.claim": "true"
           }
         },
         {
@@ -84,10 +84,10 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "user-mcp",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
             "introspection.token.claim": "true",
-            "add.to.lightweight.access.token": "true"
+            "lightweight.claim": "true"
           }
         },
         {
@@ -97,10 +97,10 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "web",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
             "introspection.token.claim": "true",
-            "add.to.lightweight.access.token": "true"
+            "lightweight.claim": "true"
           }
         }
       ]
@@ -130,8 +130,7 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "token-exchange",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
             "access.token.claim": "true",
             "introspection.token.claim": "true"
           }
@@ -143,8 +142,7 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "user-mcp",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
             "access.token.claim": "true",
             "introspection.token.claim": "true"
           }
@@ -195,10 +193,10 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "user-mcp",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
             "introspection.token.claim": "true",
-            "add.to.lightweight.access.token": "true"
+            "lightweight.claim": "true"
           }
         }
       ]
@@ -243,10 +241,10 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "user-mcp",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
             "introspection.token.claim": "true",
-            "add.to.lightweight.access.token": "true"
+            "lightweight.claim": "true"
           }
         },
         {
@@ -336,10 +334,10 @@
           "consentRequired": false,
           "config": {
             "included.client.audience": "user-mcp",
-            "add.to.id.token": "false",
-            "add.to.access.token": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
             "introspection.token.claim": "true",
-            "add.to.lightweight.access.token": "true"
+            "lightweight.claim": "true"
           }
         }
       ]
