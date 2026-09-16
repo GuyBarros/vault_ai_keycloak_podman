@@ -10,8 +10,8 @@ const scriptSrc = isProd
   : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://eum.instana.io";
 
 const connectSrc = isProd
-  ? "connect-src 'self' https://eum-orange-saas.instana.io"
-  : "connect-src 'self' 'unsafe-eval' https://eum-orange-saas.instana.io";
+  ? "connect-src 'self' https://eum.instana.io https://eum-orange-saas.instana.io"
+  : "connect-src 'self' 'unsafe-eval' https://eum.instana.io https://eum-orange-saas.instana.io";
 
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },

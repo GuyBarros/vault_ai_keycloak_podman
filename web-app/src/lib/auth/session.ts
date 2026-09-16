@@ -55,6 +55,19 @@ async function readIdTokenHintCookie(): Promise<IronSession<IdTokenHintCookie>> 
 
 const introCache = new Map<string, { active: boolean; until: number }>();
 
+// getSession() runs during Server Component rendering (e.g. page.tsx), where Next.js
+// forbids writing cookies. clearSession() there would throw "Cookies can only be
+// modified in a Server Action or Route Handler" and crash the page. Swallow that here;
+// the stale cookie is harmless and gets cleared the next time a Route Handler runs
+// (login, logout, /api/auth/me, etc).
+async function clearSessionIfPossible(): Promise<void> {
+  try {
+    await clearSession();
+  } catch {
+    // not in a writable context — nothing to do
+  }
+}
+
 export async function getSession(): Promise<SessionData | null> {
   const meta = await readMetaCookie();
   const tokens = await readTokensCookie();
@@ -68,7 +81,7 @@ export async function getSession(): Promise<SessionData | null> {
     (typeof claims.sub === 'string' && claims.sub) ||
     undefined;
   if (isSidRevoked(sid) || isSubjectRevoked(sub)) {
-    await clearSession();
+    await clearSessionIfPossible();
     return null;
   }
 
@@ -83,7 +96,7 @@ export async function getSession(): Promise<SessionData | null> {
     revokeSid(sid);
     revokeSubject(sub);
     introCache.delete(tokens.access_token);
-    await clearSession();
+    await clearSessionIfPossible();
     return null;
   }
 

@@ -46,3 +46,4 @@ terraform.rc
 *.hclic
 docker-compose/.env
 docker-compose/evidence/
+.DS_Store
