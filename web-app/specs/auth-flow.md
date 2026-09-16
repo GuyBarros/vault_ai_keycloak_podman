@@ -94,16 +94,15 @@ Keycloak revokes the SSO session and redirects back to `KEYCLOAK_LOGOUT_URI`.
 
 ## Session kill (IdP, not app-only)
 
-Three unauthorized tool calls in five minutes (`ai-agent/deny_tracker.py`) call Keycloak Admin `POST /admin/realms/demo/users/{id}/logout`. That is this demo's equivalent of the video's CAEP “session ended” beat — IBM Verify's Shared Signals bus is not in the stack.
+Three unauthorized tool calls in five minutes (`ai-agent/deny_tracker.py`) call Keycloak Admin `POST /admin/realms/demo/users/{id}/logout` and emit CAEP `session-revoked` on the SSF stream to `POST /api/auth/ssf`.
 
 | Hop | What happens |
 |---|---|
 | IdP | SSO + refresh tokens die. Access token `active` flips to `false` on introspection. |
+| Shared Signals | Keycloak SSF transmitter PUSHes a signed CAEP SET to `http://web:8080/api/auth/ssf`. The RP drops `sid` / subject. |
 | Backchannel | Keycloak POSTs `logout_token` to `http://web:8080/api/auth/backchannel-logout`. The RP records the `sid` (and subject) in an in-memory denylist and clears cookies if the browser is still attached. |
 | Introspection | `getSession()` calls token introspection (5s cache). Inactive or denylisted `sid` → session cookie dropped. |
 | Chat | Agent returns `401 {error: session_revoked}`. Next.js clears cookies. The browser stream client hits `/api/auth/logout`. |
-
-`POST /api/auth/ssf` accepts CAEP SETs for when Keycloak is started with `--features=ssf`. Live kill does not wait for that transmitter.
 
 Subject JWT `may_act.sub` is the hardcoded mapper value `spiffe://example.org/ai-agent` (scope `delegation`). The Keycloak user id stays a UUID so token-exchange can match the Vault entity.
 

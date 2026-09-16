@@ -116,12 +116,18 @@ def extract_identity(claims: dict[str, Any]) -> dict[str, Any]:
             for g in raw_groups
             if isinstance(g, str) and g.strip()
         )
+    raw_details = claims.get("authorization_details")
+    authorization_details: list[Any] = []
+    if isinstance(raw_details, list):
+        authorization_details = [item for item in raw_details if isinstance(item, dict)]
     return {
         "preferred_username": claims.get("preferred_username"),
         "agent_id": agent_id,
         "scope": scope_claim,
         "sub": claims.get("sub"),
         "groups": groups,
+        "grant_id": claims.get("jti"),
+        "authorization_details": authorization_details,
         "raw": claims,
     }
 
@@ -234,6 +240,8 @@ class JwtAuthMiddleware:
         """
         log_token = bind_log_context(
             request_id=request_id,
+            transaction_id=request_id,
+            grant_id=identity.get("grant_id") or identity.get("jti"),
             preferred_username=identity.get("preferred_username"),
             agent_id=identity.get("agent_id"),
             auth_scope=identity.get("scope"),
@@ -243,6 +251,7 @@ class JwtAuthMiddleware:
             user=verified_user,
             groups=identity.get("groups") or (),
             token=bearer_token if verified_user else None,
+            authorization_details=identity.get("authorization_details") or [],
         )
         try:
             wrapped_send = _build_request_id_send(send, request_id)

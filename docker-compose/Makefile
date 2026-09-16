@@ -59,7 +59,7 @@ help:
 	@echo "  make build       Build local images for DOCKER_PLATFORM"
 	@echo "  make clear       Stop stack and delete volumes"
 	@echo "  make prove-obo-vault  Prove jwt-keycloak bound_claims (stack must be up)"
-	@echo "  make prove-ciba-vault Prove CIBA HITL on writes; list stays silent OBO"
+	@echo "  make prove-ciba-vault Prove CIBA HITL on create; update stays silent unless sensitive"
 	@echo "  make prove-rar          Mint a Keycloak RAR token and hit Vault with it"
 	@echo "  make prove-video        Video-beat evidence (OBO, RAR, CIBA, sandbox, suspend)"
 	@echo "  make demo-status      One-shot checklist (web, vault, CIBA, phone)"

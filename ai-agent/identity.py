@@ -359,7 +359,8 @@ class OboTokenService:
         """Return an OBO token for *subject_token* carrying exactly *scopes*.
 
         Cache key is (subject_token, role_name, normalized_scope, rar) so
-        different RAR sets never share an entry.
+        different RAR sets (tool + resource) never share an entry. Callers
+        should pass tool-bound authorization_details (action + email).
         """
         if not scopes:
             raise AppError(
@@ -405,9 +406,7 @@ class OboTokenService:
                 scope=normalized_scope,
             )
             actor_token = read_actor_token(
-                self.settings.child_actor_token_path
-                if child and self.settings.child_actor_token_path.exists()
-                else self.settings.actor_token_path,
+                self.settings.child_actor_token_path if child else self.settings.actor_token_path,
                 self.logger,
             )
             obo_token, expiry_time = self.perform_token_exchange(

@@ -193,7 +193,9 @@ path "sys/control-group/request" {
 EOF
 
 # CIBA is tied to the action, then to the actor on that action.
-# OpenShell: read is silent OBO (Jira-like); write requires HITL (refund-like).
+# OpenShell: silent OBO (Jira-like) vs HITL by condition of the action
+# (create/delete like a refund; update stays silent unless the email is
+# a sensitive/patient analogue).
 #   deny on ciba/<action>/<username> = silent OBO
 #   read on ciba/<action>/<username> = that human must Approve
 vault policy write ciba-list-users - <<'EOF'
@@ -201,6 +203,18 @@ path "ciba/list-users/admin" {
   capabilities = ["deny"]
 }
 path "ciba/list-users/user" {
+  capabilities = ["deny"]
+}
+path "ciba/list_all_users/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/list_all_users/user" {
+  capabilities = ["deny"]
+}
+path "ciba/search_users_by_first_name/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/search_users_by_first_name/user" {
   capabilities = ["deny"]
 }
 path "sys/capabilities-self" {
@@ -213,6 +227,30 @@ path "ciba/write/admin" {
   capabilities = ["read"]
 }
 path "ciba/write/user" {
+  capabilities = ["read"]
+}
+path "ciba/create_user/admin" {
+  capabilities = ["read"]
+}
+path "ciba/create_user/user" {
+  capabilities = ["read"]
+}
+path "ciba/delete_user_by_email/admin" {
+  capabilities = ["read"]
+}
+path "ciba/delete_user_by_email/user" {
+  capabilities = ["read"]
+}
+path "ciba/update_user_by_email/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/update_user_by_email/user" {
+  capabilities = ["deny"]
+}
+path "ciba/sensitive/admin" {
+  capabilities = ["read"]
+}
+path "ciba/sensitive/user" {
   capabilities = ["read"]
 }
 path "sys/capabilities-self" {
@@ -250,8 +288,10 @@ EOF
 # writers may also read (list users); readers cannot login to the write role.
 # token_bound_cidrs pins issued tokens (and login) to the user-mcp workload
 # address — a laptop with a stolen OBO cannot mint the action identity.
-# CIBA for writes is ACL policy ciba-write (per-actor paths). Reads are
-# silent OBO (deny on ciba/list-users/<username>). token_policies includes
+# CIBA for writes is ACL policy ciba-write (per-tool, per-actor paths).
+# create/delete = HITL; update is silent unless ciba/sensitive/<user> is read
+# (patient-record analogue: admin@demo.com). Reads stay silent OBO
+# (deny on ciba/list_all_users/<username>). token_policies includes
 # the matching policy so each human can probe the switch after login.
 vault write auth/jwt-keycloak/role/user-mcp-oidc-read - <<'EOF'
 {
@@ -347,6 +387,9 @@ path "transform/encode/user-mcp-transform" {
   capabilities = ["create", "update"]
 }
 path "agent-lifecycle/data/ai-agent" {
+  capabilities = ["read"]
+}
+path "agent-registry/registration/display-name/ai-agent" {
   capabilities = ["read"]
 }
 EOF
@@ -638,6 +681,18 @@ path "ciba/list-users/admin" {
 path "ciba/list-users/user" {
   capabilities = ["deny"]
 }
+path "ciba/list_all_users/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/list_all_users/user" {
+  capabilities = ["deny"]
+}
+path "ciba/search_users_by_first_name/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/search_users_by_first_name/user" {
+  capabilities = ["deny"]
+}
 path "ciba/write/admin" {
   capabilities = ["deny"]
 }
@@ -660,6 +715,30 @@ path "ciba/write/admin" {
   capabilities = ["read"]
 }
 path "ciba/write/user" {
+  capabilities = ["read"]
+}
+path "ciba/create_user/admin" {
+  capabilities = ["read"]
+}
+path "ciba/create_user/user" {
+  capabilities = ["read"]
+}
+path "ciba/delete_user_by_email/admin" {
+  capabilities = ["read"]
+}
+path "ciba/delete_user_by_email/user" {
+  capabilities = ["read"]
+}
+path "ciba/update_user_by_email/admin" {
+  capabilities = ["deny"]
+}
+path "ciba/update_user_by_email/user" {
+  capabilities = ["deny"]
+}
+path "ciba/sensitive/admin" {
+  capabilities = ["read"]
+}
+path "ciba/sensitive/user" {
   capabilities = ["read"]
 }
 EOF
@@ -736,13 +815,19 @@ set_oauth_spiffe_alias() {
 }
 
 register_agent demo-user "${DEMO_USER_ENTITY_ID}" \
+  owner=user \
+  description="Demo reader identity" \
   ceiling_policies=user-mcp-agentic-read
 
 register_agent demo-admin "${DEMO_ADMIN_ENTITY_ID}" \
+  owner=admin \
+  description="Demo writer identity" \
   ceiling_policies=user-mcp-agentic-read \
   ceiling_policies=user-mcp-agentic-write
 
 register_agent ai-agent "${ENTITY_ID}" \
+  owner=admin \
+  description="Parent demo agent" \
   ceiling_policies=user-mcp-agentic-read \
   ceiling_policies=user-mcp-agentic-write
 
@@ -751,6 +836,8 @@ vault write identity/entity name=ai-agent-child \
   policies="user-mcp-agentic-read,ai-agent-child-spiffe-policy"
 CHILD_ENTITY_ID=$(vault read -field=id identity/entity/name/ai-agent-child)
 register_agent ai-agent-child "${CHILD_ENTITY_ID}" \
+  owner=admin \
+  description="Child sandbox agent (read ceiling)" \
   ceiling_policies=user-mcp-agentic-read
 
 vault write identity/entity-alias \
@@ -797,7 +884,7 @@ set_oauth_spiffe_alias "${ENTITY_ID}" "spiffe://example.org/ai-agent"
 # Owner can suspend the agent: vault kv put agent-lifecycle/ai-agent enabled=false
 vault secrets list | grep -q "^agent-lifecycle/" || \
   vault secrets enable -path=agent-lifecycle -version=2 kv
-vault kv put agent-lifecycle/ai-agent enabled=true
+vault kv put agent-lifecycle/ai-agent enabled=true owner=admin onboarded=true
 
 echo "vault-setup: agentic IAM entities + agent registry complete."
 

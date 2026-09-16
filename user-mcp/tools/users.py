@@ -7,6 +7,7 @@ from fastmcp.exceptions import ToolError
 
 from auth.context import caller_is_admin, current_vault_action_token
 from auth.scope_check import get_required_scopes, register_tool_scopes, require_scopes
+from auth.rar_check import require_rar
 from errors import AppError
 from logging_utils import log_event
 from models import UserRecord
@@ -75,6 +76,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
             lambda: repo.list_all(),
             result_summary=lambda result: {"count": len(result)},
             masker=masker,
+            invocation={},
         )
 
     @mcp.tool(
@@ -94,6 +96,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
                 "first_name": first_name,
             },
             masker=masker,
+            invocation={"first_name": first_name},
         )
 
     @mcp.tool(
@@ -110,6 +113,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
             lambda: repo.create(user),
             result_summary=lambda result: {"email": result.email},
             masker=masker,
+            invocation={"email": user.email, "user": {"email": user.email}},
         )
 
     @mcp.tool(
@@ -126,6 +130,7 @@ def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
             lambda: repo.delete_by_email(email),
             result_summary=lambda result: {"email": result.email},
             masker=masker,
+            invocation={"email": email},
         )
 
     @mcp.tool(
@@ -142,12 +147,14 @@ def register_tools(mcp: FastMCP, repo: UserRepository, masker=None) -> None:
             lambda: repo.update_by_email(email, user),
             result_summary=lambda result: {"email": result.email},
             masker=masker,
+            invocation={"email": email},
         )
 
 
-async def _run_tool(tool_name, action, result_summary, masker=None):
+async def _run_tool(tool_name, action, result_summary, masker=None, invocation=None):
     try:
         require_scopes(tool_name)
+        require_rar(tool_name, invocation or {})
         result = await action()
         if masker is not None and not caller_is_admin():
             result = await masker.mask_result(result)

@@ -174,7 +174,7 @@ services:
     command: >-
       start-dev --import-realm
       --features=token-exchange-delegation,parameterized-scopes,ciba,ssf
-      --spi-ssf-transmitter-allow-insecure-push-targets=true
+      --spi-ssf-transmitter-default-allow-insecure-push-targets=true
       --spi-ciba-auth-channel-ciba-http-auth-channel-http-authentication-channel-uri=http://ciba-channel:8093/ciba/authn
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q 'issuer' <&3"]
@@ -188,11 +188,31 @@ services:
       ciba-channel:
         condition: service_started
 
+  ssf-setup:
+    <<: *cpu
+    image: python:3.12-slim
+    container_name: ssf-setup
+    restart: "no"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: demo
+      KEYCLOAK_ADMIN_USER: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      SSF_PUSH_URL: http://web:8080/api/auth/ssf
+    command: ["python", "/app/ssf-setup.py"]
+    volumes:
+      - ./templates/ssf-setup.py:/app/ssf-setup.py:ro
+    networks:
+      - app-network
 
   # ---------------------------------------------------------------------------
   # CIBA authentication channel — Keycloak POSTs pending approvals here.
-  # Humans approve writes at http://localhost:8093. ACL policy ciba-write
-  # (ciba/write/<username>) is the per-actor switch. Reads are silent OBO.
+  # Humans approve HITL at http://localhost:8093. ACL ciba-write is per
+  # tool: create/delete = Approve; update is silent unless the email is
+  # sensitive (ciba/sensitive/<username>). Reads are silent OBO.
   # ---------------------------------------------------------------------------
   ciba-channel:
     <<: *cpu
@@ -498,6 +518,43 @@ services:
     networks:
       - app-network
 
+  # Child agent runtime (OpenShell sandbox). Own process, uid 1001, child SVID.
+  # Parent delegates over HTTP and does not mount this volume.
+  ai-agent-child:
+    <<: *cpu
+    build:
+      context: ../ai-agent
+      dockerfile: Dockerfile
+    image: agentguard-ai-agent:local
+    container_name: ai-agent-child
+    user: "1001:1001"
+    command: ["uvicorn", "child_api:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    depends_on:
+      vault-agent-child:
+        condition: service_started
+      litellm:
+        condition: service_healthy
+      token-exchange:
+        condition: service_started
+      user-mcp:
+        condition: service_started
+    environment:
+      TOKEN_EXCHANGE_URL: "http://token-exchange:9090/v1/identity/obo-token"
+      ACTOR_TOKEN_PATH: "/vault/child-secrets/child-actor-token"
+      CHILD_ACTOR_TOKEN_PATH: "/vault/child-secrets/child-actor-token"
+      USER_MCP_URL: "http://user-mcp:8090/mcp"
+      LOKI_URL: "http://loki:3100"
+      VAULT_ADDR: "http://vault:8200"
+      KEYCLOAK_URL: "http://keycloak:8080"
+      KEYCLOAK_REALM: "demo"
+    volumes:
+      - ./templates/ai-agent.env:/app/.env:ro
+      - vault-child-secrets:/vault/child-secrets:ro
+    networks:
+      - app-network
+
   ai-agent:
     <<: *cpu
     build:
@@ -510,7 +567,7 @@ services:
     depends_on:
       vault-agent:
         condition: service_started
-      vault-agent-child:
+      ai-agent-child:
         condition: service_started
       litellm:
         condition: service_healthy
@@ -525,7 +582,6 @@ services:
     environment:
       TOKEN_EXCHANGE_URL: "http://token-exchange:9090/v1/identity/obo-token"
       ACTOR_TOKEN_PATH: "/vault/secrets/actor-token"
-      CHILD_ACTOR_TOKEN_PATH: "/vault/child-secrets/child-actor-token"
       USER_MCP_URL: "http://user-mcp:8090/mcp"
       LOKI_URL: "http://loki:3100"
       VAULT_TRANSFORM_URL: "http://vault:8200/v1/transform"
@@ -537,10 +593,10 @@ services:
       KEYCLOAK_REALM: "demo"
       KEYCLOAK_ADMIN_USER: "admin"
       KEYCLOAK_ADMIN_PASSWORD: "admin"
+      CHILD_RUNTIME_URL: "http://ai-agent-child:8001"
     volumes:
       - ./templates/ai-agent.env:/app/.env:ro
       - vault-secrets:/vault/secrets:ro
-      - vault-child-secrets:/vault/child-secrets:ro
     networks:
       - app-network
 

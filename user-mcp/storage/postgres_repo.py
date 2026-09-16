@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
@@ -7,11 +8,13 @@ from typing import Any, AsyncIterator
 import asyncpg
 
 from auth.context import (
+    current_obo_authorization_details,
     current_obo_scope,
     current_obo_token,
     current_obo_user,
     current_vault_action_token,
 )
+from auth.rar_check import assert_token_rar_allows_path
 from ciba_client import CibaClient
 from errors import AppError
 from logging_utils import bind_log_context, log_event
@@ -213,8 +216,8 @@ class PostgresUserRepository(UserRepository):
 
         # vault mode: present the Keycloak OBO/CIBA JWT as X-Vault-Token.
         # Vault OAuth Resource Server validates RAR (vault:path_access) inline.
-        # jwt-keycloak login is only used to probe CIBA policy for list-users
-        # (and write, when ACL ciba/write/<user> is read).
+        # jwt-keycloak login is only used to probe CIBA policy per tool
+        # (create/delete HITL; update silent unless ciba/sensitive/<user>).
         user = current_obo_user.get(None)
         obo_token = current_obo_token.get(None)
         if not user or not obo_token:
@@ -233,9 +236,20 @@ class PostgresUserRepository(UserRepository):
 
         assert self._vault is not None
         vault_jwt = await self._jwt_for_vault(obo_token, jwt_role, user, write=write)
+        assert_token_rar_allows_path(vault_jwt, db_creds_path)
         current_vault_action_token.set(vault_jwt)
         bind_log_context(vault_auth_mode="oauth-resource-server")
-        creds = await self._vault.read_database_creds(vault_jwt, db_creds_path)
+        from auth.rar_check import operation_details_from
+
+        op = operation_details_from(list(current_obo_authorization_details.get() or ()))
+        lease_params = {
+            key: str(op[key])
+            for key in ("email", "first_name")
+            if op.get(key)
+        }
+        creds = await self._vault.read_database_creds(
+            vault_jwt, db_creds_path, params=lease_params or None
+        )
 
         try:
             conn = await asyncpg.connect(
@@ -299,11 +313,16 @@ class PostgresUserRepository(UserRepository):
     ) -> str:
         """Return the JWT that Vault OAuth RS should see for this tool call.
 
-        List-users consults ACL policy ciba-list-users (deny = silent OBO,
-        matching OpenShell Jira read). Writes consult ciba/write/<user>
-        (read = CIBA HITL, matching refund/patient write).
+        HITL is a policy outcome on ciba/<tool>/<user> (and ciba/sensitive/<user>
+        for the patient-record analogue). After Approve, the lease is still
+        minted with the action-bound OBO — not the CIBA JWT, which has scopes
+        only and no operationDetails.
         """
-        action = "write" if write else "list-users"
+        from auth.rar_check import email_is_sensitive, operation_details_from
+
+        op = operation_details_from(list(current_obo_authorization_details.get() or ()))
+        action = str(op.get("action") or ("write" if write else "list-users"))
+        email = str(op.get("email") or "")
         try:
             parent = await self._vault.login_with_jwt(
                 obo_token, jwt_role, jwt_grant="session-obo"
@@ -311,16 +330,25 @@ class PostgresUserRepository(UserRepository):
         except AppError as exc:
             if not _vault_wants_ciba(exc):
                 raise
-            return await self._fetch_ciba_jwt(jwt_role, user, action=action)
+            return await self._fetch_ciba_jwt(
+                jwt_role, user, action=action, obo_token=obo_token
+            )
 
-        if not await self._vault.ciba_required_by_policy(
+        need = await self._vault.ciba_required_by_policy(
             parent, action=action, user=user
-        ):
+        )
+        if not need and email_is_sensitive(email):
+            need = await self._vault.ciba_required_by_policy(
+                parent, action="sensitive", user=user
+            )
+        if not need:
             return obo_token
-        return await self._fetch_ciba_jwt(jwt_role, user, action=action)
+        return await self._fetch_ciba_jwt(
+            jwt_role, user, action=action, obo_token=obo_token
+        )
 
     async def _fetch_ciba_jwt(
-        self, jwt_role: str, user: str, *, action: str
+        self, jwt_role: str, user: str, *, action: str, obo_token: str
     ) -> str:
         if self._ciba is None:
             raise AppError(
@@ -341,13 +369,50 @@ class PostgresUserRepository(UserRepository):
             preferred_username=user,
             ciba_action=action,
         )
-        ciba_jwt = await self._ciba.fetch_access_token(
-            login_hint=user,
-            binding_message=action,
-            scope="openid users.write" if action == "write" else "openid users.read",
+        details = list(current_obo_authorization_details.get() or ())
+        authz = json.dumps(details) if details else None
+        write_actions = {
+            "write",
+            "create_user",
+            "delete_user_by_email",
+            "update_user_by_email",
+            "sensitive",
+        }
+        scope = (
+            "openid users.write" if action in write_actions else "openid users.read"
         )
+        try:
+            ciba_jwt = await self._ciba.fetch_access_token(
+                login_hint=user,
+                binding_message=self._ciba_binding_message(action),
+                scope=scope,
+                authorization_details=authz,
+            )
+        except AppError:
+            if not authz:
+                raise
+            ciba_jwt = await self._ciba.fetch_access_token(
+                login_hint=user,
+                binding_message=self._ciba_binding_message(action),
+                scope=scope,
+            )
         await self._vault.login_with_jwt(ciba_jwt, jwt_role, jwt_grant="ciba")
-        return ciba_jwt
+        return obo_token
+
+    @staticmethod
+    def _ciba_binding_message(action: str) -> str:
+        """HITL text carries the RAR action + resource (video refund/issue_key)."""
+        from auth.rar_check import operation_details_from
+
+        op = operation_details_from(list(current_obo_authorization_details.get() or ()))
+        parts = [str(op.get("action") or action)]
+        email = str(op.get("email") or "").strip()
+        if email:
+            parts.append(email)
+        first_name = str(op.get("first_name") or "").strip()
+        if first_name:
+            parts.append(first_name)
+        return " ".join(parts)
 
     def _select_vault_targets(
         self, scope: str, *, write: bool

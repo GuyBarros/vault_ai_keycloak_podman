@@ -125,8 +125,8 @@ class VaultClient:
     ) -> bool:
         """True when ACL policy for this action requires CIBA for this human.
 
-        Probe path is ciba/<action>/<username>. Edit policy ciba-write
-        in the Vault UI: read = phone Approve on write, deny = silent OBO.
+        Probe path is ciba/<action>/<username>. Edit the matching ACL
+        (ciba-list-users / ciba-write): read = phone Approve, deny = silent OBO.
         """
         path = f"ciba/{action}/{user}"
         url = f"{self._addr}/v1/sys/capabilities-self"
@@ -336,13 +336,27 @@ class VaultClient:
         return encoded
 
     async def read_database_creds(
-        self, client_token: str, creds_path: str
+        self,
+        client_token: str,
+        creds_path: str,
+        params: dict[str, str] | None = None,
     ) -> DynamicDbCredentials:
         path = creds_path.strip("/")
         url = f"{self._addr}/v1/{path}"
+        payload = {k: v for k, v in (params or {}).items() if v}
         try:
             async with httpx.AsyncClient(verify=self._verify_tls, timeout=self._timeout) as client:
-                resp = await client.get(url, headers=self._headers(client_token))
+                if payload:
+                    # GET + query: database/creds is a read. Vault RAR
+                    # allowed_parameters/required_parameters bind to request
+                    # params on that GET. POST is create/update and misses.
+                    resp = await client.get(
+                        url,
+                        params=payload,
+                        headers=self._headers(client_token),
+                    )
+                else:
+                    resp = await client.get(url, headers=self._headers(client_token))
         except httpx.HTTPError as exc:
             raise AppError(
                 502,

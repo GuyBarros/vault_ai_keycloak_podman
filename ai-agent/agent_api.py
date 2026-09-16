@@ -347,6 +347,7 @@ def create_app(
                         subject_token=access_token,
                         request_id=request.state.request_id,
                         user_mcp_url=request.app.state.settings.user_mcp_url,
+                        child_runtime_url=request.app.state.settings.child_runtime_url,
                     )
                 )
             runtime = _build_runtime_for_request(request.app.state.llm, tools, is_admin=is_admin)
